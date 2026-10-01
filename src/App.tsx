@@ -4,10 +4,15 @@ import {
   getStoredProducts, 
   getStoredCategories, 
   saveCategories, 
+  saveProducts,
   addProductToStorage, 
   updateProductInStorage, 
   deleteProductFromStorage,
-  clearAllProducts
+  clearAllProducts,
+  syncLocalProductsWithServer,
+  findProductBySlugOrId,
+  findCategoryBySlug,
+  generateSlug
 } from './services/productStorage';
 import { TopDisclosureBar } from './components/TopDisclosureBar';
 import { Header } from './components/Header';
@@ -26,6 +31,7 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [productNotFound, setProductNotFound] = useState(false);
   const [activeSection, setActiveSection] = useState<NavSection>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -39,23 +45,58 @@ export default function App() {
     setProducts(loadedProducts);
     setCategories(loadedCategories);
 
-    // Parse URL on load for /products/:slug or ?product=:slug
+    // Sync any existing browser localStorage products to server disk
+    syncLocalProductsWithServer();
+
+    // Parse URL on load for /product/:slug, /products/:slug, /category/:slug, ?product=:slug, ?category=:slug
     const parseUrlProduct = () => {
       const path = window.location.pathname;
       const searchParams = new URLSearchParams(window.location.search);
-      let targetSlug = searchParams.get('product');
+      let targetProductSlug = searchParams.get('product') || searchParams.get('p') || searchParams.get('id');
+      let targetCategorySlug = searchParams.get('category') || searchParams.get('cat');
 
-      if (!targetSlug && path.startsWith('/products/')) {
-        targetSlug = path.replace('/products/', '').replace(/\/$/, '');
+      if (!targetProductSlug) {
+        if (path.startsWith('/products/')) {
+          targetProductSlug = path.replace(/^\/products\//, '').replace(/\/$/, '');
+        } else if (path.startsWith('/product/')) {
+          targetProductSlug = path.replace(/^\/product\//, '').replace(/\/$/, '');
+        }
       }
 
-      if (targetSlug && loadedProducts.length > 0) {
-        const found = loadedProducts.find(
-          (p) => p.slug === targetSlug || p.id === targetSlug
-        );
+      if (!targetCategorySlug) {
+        if (path.startsWith('/category/')) {
+          targetCategorySlug = path.replace(/^\/category\//, '').replace(/\/$/, '');
+        } else if (path.startsWith('/categories/')) {
+          targetCategorySlug = path.replace(/^\/categories\//, '').replace(/\/$/, '');
+        }
+      }
+
+      const currentProducts = getStoredProducts();
+      const currentCategories = getStoredCategories();
+
+      if (targetProductSlug) {
+        const found = findProductBySlugOrId(currentProducts, targetProductSlug);
         if (found) {
           setSelectedProduct(found);
+          setProductNotFound(false);
+          setSelectedCategory(null);
+        } else {
+          setSelectedProduct(null);
+          setProductNotFound(true);
         }
+      } else if (targetCategorySlug) {
+        const foundCat = findCategoryBySlug(currentCategories, targetCategorySlug);
+        if (foundCat) {
+          setSelectedCategory(foundCat);
+          setSelectedProduct(null);
+          setProductNotFound(false);
+        } else {
+          setSelectedProduct(null);
+          setProductNotFound(false);
+        }
+      } else {
+        setSelectedProduct(null);
+        setProductNotFound(false);
       }
     };
 
@@ -73,8 +114,9 @@ export default function App() {
   // Update browser URL when a product is opened or closed
   const handleSelectProduct = (product: Product) => {
     setSelectedProduct(product);
+    setProductNotFound(false);
     try {
-      const newUrl = `/products/${product.slug}`;
+      const newUrl = `/product/${product.slug}`;
       window.history.pushState({ productId: product.id }, '', newUrl);
     } catch (e) {
       console.warn('Could not pushState', e);
@@ -82,13 +124,36 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleBackToDiscovery = () => {
-    setSelectedProduct(null);
+  const handleSelectCategory = (cat: string | null) => {
+    setSelectedCategory(cat);
+    if (selectedProduct) setSelectedProduct(null);
+    setProductNotFound(false);
     try {
-      window.history.pushState({}, '', '/');
+      if (cat) {
+        const catSlug = generateSlug(cat);
+        window.history.pushState({ category: cat }, '', `/category/${catSlug}`);
+      } else {
+        window.history.pushState({}, '', '/');
+      }
     } catch (e) {
       console.warn('Could not pushState', e);
     }
+  };
+
+  const handleBackToDiscovery = () => {
+    setSelectedProduct(null);
+    setProductNotFound(false);
+    try {
+      if (selectedCategory) {
+        const catSlug = generateSlug(selectedCategory);
+        window.history.pushState({ category: selectedCategory }, '', `/category/${catSlug}`);
+      } else {
+        window.history.pushState({}, '', '/');
+      }
+    } catch (e) {
+      console.warn('Could not pushState', e);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Header navigation smooth jump
@@ -162,6 +227,12 @@ export default function App() {
     }
   };
 
+  const handleImportProducts = (imported: Product[]) => {
+    saveProducts(imported);
+    setProducts(getStoredProducts());
+    setCategories(getStoredCategories());
+  };
+
   // Product counts by category
   const productCountByCategory = useMemo(() => {
     const map: Record<string, number> = {};
@@ -227,12 +298,32 @@ export default function App() {
           <ProductDetail
             product={selectedProduct}
             onBack={handleBackToDiscovery}
-            onSelectCategory={(cat) => {
-              setSelectedCategory(cat);
-              setSelectedProduct(null);
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
+            onSelectCategory={handleSelectCategory}
           />
+        ) : productNotFound ? (
+          /* RESILIENT PRODUCT 404 SCREEN */
+          <section className="py-20 sm:py-28 max-w-2xl mx-auto px-4 text-center font-sans">
+            <div className="p-8 sm:p-12 rounded-2xl bg-[#11131A] border border-[#303541] shadow-2xl relative overflow-hidden">
+              <div className="w-14 h-14 rounded-2xl bg-[#181B24] border border-[#303541] text-[#3B5BDB] flex items-center justify-center mx-auto mb-5 shadow-sm">
+                <Search className="w-7 h-7" />
+              </div>
+              <div className="text-[12px] font-display font-bold uppercase tracking-wider text-[#3B5BDB] mb-2">
+                Product Notice
+              </div>
+              <h1 className="text-[24px] sm:text-[28px] font-display font-semibold text-[#F5F7FA] tracking-tight mb-3">
+                Product Deal Not Found
+              </h1>
+              <p className="text-[15px] sm:text-[16px] text-[#A7AFBF] max-w-md mx-auto mb-8 font-normal leading-relaxed">
+                The product link you visited may have expired, been updated, or the web address might be mistyped.
+              </p>
+              <button
+                onClick={handleBackToDiscovery}
+                className="px-6 py-3 bg-[#3B5BDB] hover:bg-[#7657D5] text-white font-sans font-semibold text-[15px] rounded-xl transition-all duration-200 shadow-lg shadow-[#3B5BDB]/25 hover:shadow-[#7657D5]/35 cursor-pointer inline-flex items-center gap-2"
+              >
+                <span>← Back to All Deals &amp; Discoveries</span>
+              </button>
+            </div>
+          </section>
         ) : (
           /* HOMEPAGE & DISCOVERY FEED */
           <div>
@@ -422,10 +513,7 @@ export default function App() {
                 <CategorySection
                   categories={categories}
                   selectedCategory={selectedCategory}
-                  onSelectCategory={(cat) => {
-                    setSelectedCategory(cat);
-                    window.scrollTo({ top: 350, behavior: 'smooth' });
-                  }}
+                  onSelectCategory={handleSelectCategory}
                   productCountByCategory={productCountByCategory}
                 />
 
@@ -475,6 +563,7 @@ export default function App() {
         onDeleteProduct={handleDeleteProduct}
         onAddCategory={handleAddCategory}
         onClearAll={handleClearAll}
+        onImportProducts={handleImportProducts}
       />
 
       {/* Trust & Legal Information Modals */}

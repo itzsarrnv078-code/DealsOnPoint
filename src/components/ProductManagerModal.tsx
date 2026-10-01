@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Product } from '../types/product';
 import { 
   X, 
@@ -10,7 +10,11 @@ import {
   Link as LinkIcon,
   Tag,
   Layers,
-  Info
+  Info,
+  Download,
+  Upload,
+  Copy,
+  CheckCircle2
 } from 'lucide-react';
 
 interface ProductManagerModalProps {
@@ -23,6 +27,7 @@ interface ProductManagerModalProps {
   onDeleteProduct: (id: string) => void;
   onAddCategory: (category: string) => void;
   onClearAll: () => void;
+  onImportProducts?: (importedProducts: Product[]) => void;
 }
 
 export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
@@ -35,9 +40,11 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
   onDeleteProduct,
   onAddCategory,
   onClearAll,
+  onImportProducts,
 }) => {
   const [activeTab, setActiveTab] = useState<'add' | 'list' | 'categories'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form state
   const [name, setName] = useState('');
@@ -53,8 +60,22 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
   const [isNewArrival, setIsNewArrival] = useState(true);
   const [isTrending, setIsTrending] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const handleCopyProductUrl = async (p: Product) => {
+    try {
+      const url = typeof window !== 'undefined'
+        ? `${window.location.origin}/product/${p.slug}`
+        : `https://dealsonpoint.com/product/${p.slug}`;
+      await navigator.clipboard.writeText(url);
+      setCopiedSlug(p.slug);
+      setTimeout(() => setCopiedSlug(null), 2000);
+    } catch (e) {
+      console.warn('Could not copy link', e);
+    }
+  };
 
   const handleEditClick = (p: Product) => {
     setEditingId(p.id);
@@ -171,6 +192,60 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
 
     handleResetForm();
     setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
+  const handleDownloadJson = () => {
+    try {
+      const dataStr = JSON.stringify(products, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'products.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setSuccessMsg('Downloaded products.json backup successfully!');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (err: any) {
+      alert('Could not download file: ' + err.message);
+    }
+  };
+
+  const handleCopyJson = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(products, null, 2));
+      setSuccessMsg('Copied products JSON to clipboard!');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (err: any) {
+      alert('Could not copy JSON: ' + err.message);
+    }
+  };
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (Array.isArray(parsed)) {
+          if (onImportProducts) {
+            onImportProducts(parsed);
+          }
+          setSuccessMsg(`Imported ${parsed.length} products successfully!`);
+          setTimeout(() => setSuccessMsg(''), 3000);
+        } else {
+          alert('Invalid format: File must contain a JSON array of products.');
+        }
+      } catch (err: any) {
+        alert('Failed to parse JSON file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    // Reset file input so user can re-import if needed
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleCreateCategory = (e: React.FormEvent) => {
@@ -462,6 +537,57 @@ Material: Anodized Aluminum`}
 
           {activeTab === 'list' && (
             <div className="space-y-4">
+              
+              {/* Data Sync & Backup Toolbar for Netlify & Source of Truth */}
+              <div className="p-3.5 bg-[#181B24] rounded-xl border border-[#303541] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-[#A7AFBF]">
+                  <CheckCircle2 className="w-4 h-4 text-[#3B5BDB] shrink-0" />
+                  <span>
+                    <strong className="text-[#F5F7FA]">Single Source of Truth:</strong> Synced for Netlify deployments &amp; live preview.
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept=".json,application/json"
+                    onChange={handleImportFile}
+                    className="hidden"
+                  />
+                  
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-2.5 py-1.5 bg-[#11131A] hover:bg-[#1E222D] border border-[#303541] text-[#F5F7FA] rounded-md transition-colors flex items-center gap-1.5 cursor-pointer"
+                    title="Import a products.json file"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-[#3B5BDB]" />
+                    <span>Import JSON</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyJson}
+                    className="px-2.5 py-1.5 bg-[#11131A] hover:bg-[#1E222D] border border-[#303541] text-[#F5F7FA] rounded-md transition-colors flex items-center gap-1.5 cursor-pointer"
+                    title="Copy all products data to clipboard as JSON"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-[#7657D5]" />
+                    <span>Copy JSON</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadJson}
+                    className="px-2.5 py-1.5 bg-[#3B5BDB]/20 hover:bg-[#3B5BDB]/30 border border-[#3B5BDB]/40 text-[#3B5BDB] rounded-md transition-colors flex items-center gap-1.5 cursor-pointer font-semibold"
+                    title="Download backup file of all products"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download Backup</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between text-xs text-[#A7AFBF] pb-2 border-b border-[#303541]">
                 <span>{products.length === 0 ? 'No products have been added yet.' : `${products.length} products published`}</span>
                 {products.length > 0 && (
@@ -515,6 +641,23 @@ Material: Anodized Aluminum`}
 
                       <div className="flex items-center gap-2 shrink-0">
                         <button
+                          type="button"
+                          onClick={() => handleCopyProductUrl(p)}
+                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                            copiedSlug === p.slug 
+                              ? 'text-emerald-400 bg-emerald-500/10' 
+                              : 'text-[#A7AFBF] hover:text-[#3B5BDB] hover:bg-[#181B24]'
+                          }`}
+                          title={copiedSlug === p.slug ? "URL copied to clipboard!" : "Copy direct product URL"}
+                        >
+                          {copiedSlug === p.slug ? (
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <LinkIcon className="w-4 h-4" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleEditClick(p)}
                           className="p-1.5 text-[#A7AFBF] hover:text-[#3B5BDB] hover:bg-[#181B24] rounded-lg transition-colors cursor-pointer"
                           title="Edit product"
@@ -522,6 +665,7 @@ Material: Anodized Aluminum`}
                           <Edit3 className="w-4 h-4" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => onDeleteProduct(p.id)}
                           className="p-1.5 text-[#A7AFBF] hover:text-[#D63A4A] hover:bg-[#181B24] rounded-lg transition-colors cursor-pointer"
                           title="Delete product"

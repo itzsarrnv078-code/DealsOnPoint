@@ -1,14 +1,76 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import fs from 'fs';
+import { defineConfig, Plugin } from 'vite';
+
+// Automatically handles persistent product storage to src/data/products.json
+// during development in AI Studio so products are saved directly into the repository files.
+function productDataApiPlugin(): Plugin {
+  return {
+    name: 'product-data-api',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url === '/api/products' && req.method === 'POST') {
+          let body = '';
+          req.on('data', chunk => {
+            body += chunk;
+          });
+          req.on('end', () => {
+            try {
+              const data = JSON.parse(body);
+              if (Array.isArray(data)) {
+                const filePath = path.resolve('.', 'src/data/products.json');
+                fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ success: true, count: data.length }));
+                return;
+              }
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'Data must be an array of products' }));
+            } catch (err: any) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
+
+        if (req.url === '/api/products' && req.method === 'GET') {
+          try {
+            const filePath = path.resolve('.', 'src/data/products.json');
+            if (fs.existsSync(filePath)) {
+              const content = fs.readFileSync(filePath, 'utf-8');
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(content);
+              return;
+            }
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.end('[]');
+          } catch (err: any) {
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
+        next();
+      });
+    },
+  };
+}
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), productDataApiPlugin()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve('.'),
       },
     },
     server: {

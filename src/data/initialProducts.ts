@@ -1,4 +1,5 @@
 import { Product } from '../types/product';
+import productsData from './products.json';
 
 export const INITIAL_CATEGORIES = [
   'Tech & Electronics',
@@ -11,6 +12,5 @@ export const INITIAL_CATEGORIES = [
   'Daily Essentials'
 ];
 
-// Launch the website with ZERO products as strictly requested.
-// Products are added personally by the website owner.
-export const INITIAL_PRODUCTS: Product[] = [];
+// Single source of truth for products bundled into the production build.
+export const INITIAL_PRODUCTS: Product[] = (Array.isArray(productsData) ? productsData : []) as Product[];
