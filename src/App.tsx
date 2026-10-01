@@ -7,7 +7,9 @@ import {
   addProductToStorage, 
   updateProductInStorage, 
   deleteProductFromStorage,
-  clearAllProducts
+  clearAllProducts,
+  fetchProductsFromBackend,
+  fetchCategoriesFromBackend
 } from './services/productStorage';
 import { TopDisclosureBar } from './components/TopDisclosureBar';
 import { Header } from './components/Header';
@@ -32,38 +34,63 @@ export default function App() {
   const [isManagerOpen, setIsManagerOpen] = useState(false);
   const [activeLegalModal, setActiveLegalModal] = useState<LegalModalType>(null);
 
+  // Helper to parse URL on load/change for /products/:slug or ?product=:slug
+  const resolveUrlProduct = (productList: Product[]) => {
+    const path = window.location.pathname;
+    const searchParams = new URLSearchParams(window.location.search);
+    let targetSlug = searchParams.get('product');
+
+    if (!targetSlug && path.startsWith('/products/')) {
+      targetSlug = path.replace('/products/', '').replace(/\/$/, '');
+    }
+
+    if (targetSlug) {
+      try {
+        targetSlug = decodeURIComponent(targetSlug).trim();
+      } catch (e) {
+        // ignore
+      }
+      const found = productList.find(
+        (p) => p.slug.toLowerCase() === targetSlug!.toLowerCase() || p.id === targetSlug
+      );
+      if (found) {
+        setSelectedProduct(found);
+        document.title = `${found.name} - Deals On Point`;
+        return;
+      }
+    } else {
+      setSelectedProduct(null);
+      document.title = 'Deals On Point - Smart Finds. Deals On Point.';
+    }
+  };
+
   // Initialize data and check URL for deep-linked product
   useEffect(() => {
-    const loadedProducts = getStoredProducts();
-    const loadedCategories = getStoredCategories();
-    setProducts(loadedProducts);
-    setCategories(loadedCategories);
+    // 1. Instant local load
+    const initialProducts = getStoredProducts();
+    const initialCategories = getStoredCategories();
+    setProducts(initialProducts);
+    setCategories(initialCategories);
+    resolveUrlProduct(initialProducts);
 
-    // Parse URL on load for /products/:slug or ?product=:slug
-    const parseUrlProduct = () => {
-      const path = window.location.pathname;
-      const searchParams = new URLSearchParams(window.location.search);
-      let targetSlug = searchParams.get('product');
-
-      if (!targetSlug && path.startsWith('/products/')) {
-        targetSlug = path.replace('/products/', '').replace(/\/$/, '');
+    // 2. Fetch from Netlify Database API in the background
+    fetchProductsFromBackend().then((latestProducts) => {
+      if (latestProducts && Array.isArray(latestProducts)) {
+        setProducts(latestProducts);
+        resolveUrlProduct(latestProducts);
       }
+    });
 
-      if (targetSlug && loadedProducts.length > 0) {
-        const found = loadedProducts.find(
-          (p) => p.slug === targetSlug || p.id === targetSlug
-        );
-        if (found) {
-          setSelectedProduct(found);
-        }
+    fetchCategoriesFromBackend().then((latestCats) => {
+      if (latestCats && latestCats.length > 0) {
+        setCategories(latestCats);
       }
-    };
-
-    parseUrlProduct();
+    });
 
     // Listen to browser popstate (back/forward)
     const handlePopState = () => {
-      parseUrlProduct();
+      const currentList = getStoredProducts();
+      resolveUrlProduct(currentList);
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -73,6 +100,7 @@ export default function App() {
   // Update browser URL when a product is opened or closed
   const handleSelectProduct = (product: Product) => {
     setSelectedProduct(product);
+    document.title = `${product.name} - Deals On Point`;
     try {
       const newUrl = `/products/${product.slug}`;
       window.history.pushState({ productId: product.id }, '', newUrl);
@@ -84,6 +112,7 @@ export default function App() {
 
   const handleBackToDiscovery = () => {
     setSelectedProduct(null);
+    document.title = 'Deals On Point - Smart Finds. Deals On Point.';
     try {
       window.history.pushState({}, '', '/');
     } catch (e) {
