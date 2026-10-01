@@ -10,8 +10,14 @@ import {
   Link as LinkIcon,
   Tag,
   Layers,
-  Info
+  Info,
+  Database,
+  Download,
+  Upload,
+  RefreshCw,
+  Copy
 } from 'lucide-react';
+import { syncLocalProductsToBackend, saveProducts } from '../services/productStorage';
 
 interface ProductManagerModalProps {
   isOpen: boolean;
@@ -36,7 +42,7 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
   onAddCategory,
   onClearAll,
 }) => {
-  const [activeTab, setActiveTab] = useState<'add' | 'list' | 'categories'>('add');
+  const [activeTab, setActiveTab] = useState<'add' | 'list' | 'categories' | 'database'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Form state
@@ -53,6 +59,11 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
   const [isNewArrival, setIsNewArrival] = useState(true);
   const [isTrending, setIsTrending] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Backup & Cloud sync state
+  const [importJsonText, setImportJsonText] = useState('');
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -181,6 +192,64 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
     setNewCatInput('');
   };
 
+  const handleCloudSync = async () => {
+    setSyncLoading(true);
+    setSyncResult(null);
+    try {
+      const res = await syncLocalProductsToBackend();
+      if (res.success) {
+        setSyncResult(`Successfully synced ${res.count} product(s) to Netlify Database!`);
+      } else {
+        setSyncResult('Cloud sync completed.');
+      }
+    } catch (e: any) {
+      setSyncResult(`Sync error: ${e?.message || 'Failed'}`);
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const handleCopyJson = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(products, null, 2));
+      setSuccessMsg('Product JSON copied to clipboard!');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (e) {
+      setSuccessMsg('Failed to copy');
+    }
+  };
+
+  const handleDownloadJson = () => {
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(products, null, 2));
+    const dlAnchorElem = document.createElement('a');
+    dlAnchorElem.setAttribute('href', dataStr);
+    dlAnchorElem.setAttribute('download', `deals_on_point_products_${new Date().toISOString().slice(0, 10)}.json`);
+    dlAnchorElem.click();
+  };
+
+  const handleImportJson = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importJsonText.trim()) return;
+    try {
+      const parsed = JSON.parse(importJsonText);
+      if (!Array.isArray(parsed)) {
+        alert('Invalid format: JSON must be an array of products');
+        return;
+      }
+      for (const item of parsed) {
+        if (item.name) {
+          onAddProduct(item);
+        }
+      }
+      setImportJsonText('');
+      setSuccessMsg(`Successfully imported ${parsed.length} products!`);
+      setTimeout(() => setSuccessMsg(''), 3000);
+      setActiveTab('list');
+    } catch (e: any) {
+      alert(`Invalid JSON format: ${e?.message || 'Parse error'}`);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans animate-fadeIn">
       <div className="bg-[#11131A] text-[#F5F7FA] rounded-2xl max-w-3xl w-full shadow-2xl border border-[#303541] overflow-hidden flex flex-col max-h-[92vh]">
@@ -240,6 +309,18 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
           >
             <Tag className="w-3.5 h-3.5" />
             <span>Categories ({categories.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('database')}
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'database'
+                ? 'border-[#3B5BDB] text-[#3B5BDB]'
+                : 'border-transparent text-[#A7AFBF] hover:text-[#F5F7FA]'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>Cloud & Backup</span>
           </button>
         </div>
 
@@ -568,6 +649,110 @@ Material: Anodized Aluminum`}
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {activeTab === 'database' && (
+            <div className="space-y-6">
+              
+              {/* Cloud Database Section */}
+              <div className="p-5 rounded-xl bg-[#181B24] border border-[#303541] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-5 h-5 text-[#3B5BDB]" />
+                    <h3 className="font-display font-semibold text-sm text-[#F5F7FA]">
+                      Netlify Cloud Database (Postgres)
+                    </h3>
+                  </div>
+                  <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full">
+                    Active
+                  </span>
+                </div>
+                <p className="text-xs text-[#A7AFBF] leading-relaxed">
+                  Your website is powered by Netlify Database (Postgres). Any products added or synced here are permanently stored in the cloud and displayed to all visitors across all devices.
+                </p>
+
+                {syncResult && (
+                  <div className="p-3 rounded-lg bg-[#3B5BDB]/15 border border-[#3B5BDB]/30 text-xs text-[#3B5BDB] flex items-center gap-2">
+                    <Check className="w-4 h-4 shrink-0 text-[#3B5BDB]" />
+                    <span>{syncResult}</span>
+                  </div>
+                )}
+
+                <div className="pt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCloudSync}
+                    disabled={syncLoading}
+                    className="px-4 py-2 bg-[#3B5BDB] hover:bg-[#7657D5] disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${syncLoading ? 'animate-spin' : ''}`} />
+                    <span>{syncLoading ? 'Syncing...' : 'Sync Local Products to Cloud'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Export / Backup Section */}
+              <div className="p-5 rounded-xl bg-[#181B24] border border-[#303541] space-y-3">
+                <div className="flex items-center gap-2">
+                  <Download className="w-5 h-5 text-[#7657D5]" />
+                  <h3 className="font-display font-semibold text-sm text-[#F5F7FA]">
+                    Export & Backup Products
+                  </h3>
+                </div>
+                <p className="text-xs text-[#A7AFBF]">
+                  Save an offline backup copy of all your current products, descriptions, and Amazon affiliate links.
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCopyJson}
+                    className="px-3.5 py-2 bg-[#11131A] hover:bg-[#1E222D] border border-[#303541] text-[#F5F7FA] text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-[#A7AFBF]" />
+                    <span>Copy Products JSON</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadJson}
+                    className="px-3.5 py-2 bg-[#11131A] hover:bg-[#1E222D] border border-[#303541] text-[#F5F7FA] text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#A7AFBF]" />
+                    <span>Download JSON Backup</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Import / Restore Section */}
+              <div className="p-5 rounded-xl bg-[#181B24] border border-[#303541] space-y-3">
+                <div className="flex items-center gap-2">
+                  <Upload className="w-5 h-5 text-emerald-400" />
+                  <h3 className="font-display font-semibold text-sm text-[#F5F7FA]">
+                    Import Products from JSON
+                  </h3>
+                </div>
+                <p className="text-xs text-[#A7AFBF]">
+                  Paste a JSON array of products to restore or bulk-add them to Deals On Point.
+                </p>
+                <form onSubmit={handleImportJson} className="space-y-3">
+                  <textarea
+                    rows={3}
+                    placeholder='[{"name": "...", "category": "Tech & Electronics", "amazonUrl": "...", "shortDescription": "..."}]'
+                    value={importJsonText}
+                    onChange={(e) => setImportJsonText(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-[#11131A] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg focus:outline-none focus:border-[#3B5BDB] font-mono"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!importJsonText.trim()}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Import & Restore Products</span>
+                  </button>
+                </form>
+              </div>
+
             </div>
           )}
 
