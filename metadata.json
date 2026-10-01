@@ -1,0 +1,6 @@
+{
+  "name": "Deals On Point",
+  "description": "Smart Finds. Deals On Point. Discover useful products, fresh finds and deals worth checking out.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
