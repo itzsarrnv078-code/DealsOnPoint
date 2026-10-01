@@ -3,20 +3,64 @@ import { INITIAL_PRODUCTS, INITIAL_CATEGORIES } from '../data/initialProducts';
 
 const STORAGE_KEY_PRODUCTS = 'deals_on_point_products_v2';
 const STORAGE_KEY_CATEGORIES = 'deals_on_point_categories_v2';
+const STORAGE_KEY_DELETED = 'deals_on_point_deleted_slugs_v2';
+
+function getDeletedSlugs(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DELETED);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDeletedSlugs(slugs: string[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_DELETED, JSON.stringify(slugs));
+  } catch (e) {
+    console.error('Failed to save deleted slugs', e);
+  }
+}
 
 export function getStoredProducts(): Product[] {
   if (typeof window === 'undefined') return INITIAL_PRODUCTS;
   try {
+    const deleted = new Set(getDeletedSlugs());
+    const validInitial = INITIAL_PRODUCTS.filter((p) => !deleted.has(p.slug));
+
     const raw = localStorage.getItem(STORAGE_KEY_PRODUCTS);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify([]));
-      return [];
+      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(validInitial));
+      return validInitial;
     }
+
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) {
+      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(validInitial));
+      return validInitial;
+    }
+
+    // Merge any missing initial products (e.g. LINKCHEF) unless explicitly deleted
+    const storedSlugs = new Set(parsed.map((p) => p.slug));
+    const missingInitial = validInitial.filter((p) => !storedSlugs.has(p.slug));
+
+    if (missingInitial.length > 0) {
+      const merged = [...parsed, ...missingInitial];
+      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(merged));
+      return merged;
+    }
+
+    // If localStorage was saved as empty array from an old session, re-seed with valid initial products
+    if (parsed.length === 0 && validInitial.length > 0 && deleted.size === 0) {
+      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(validInitial));
+      return validInitial;
+    }
+
+    return parsed;
   } catch (e) {
     console.warn('Failed to load products from storage', e);
-    return [];
+    return INITIAL_PRODUCTS;
   }
 }
 
@@ -73,6 +117,12 @@ export function addProductToStorage(productData: Omit<Product, 'id' | 'slug' | '
     counter++;
   }
 
+  // Remove from deleted list if previously deleted
+  const deleted = getDeletedSlugs();
+  if (deleted.includes(slug)) {
+    saveDeletedSlugs(deleted.filter(s => s !== slug));
+  }
+
   const id = `prod-${Date.now()}`;
   const newProduct: Product = {
     ...productData,
@@ -112,12 +162,22 @@ export function updateProductInStorage(id: string, updates: Partial<Product>): P
 
 export function deleteProductFromStorage(id: string): void {
   const products = getStoredProducts();
+  const target = products.find(p => p.id === id);
+  if (target) {
+    const deleted = getDeletedSlugs();
+    if (!deleted.includes(target.slug)) {
+      saveDeletedSlugs([...deleted, target.slug]);
+    }
+  }
   const filtered = products.filter(p => p.id !== id);
   saveProducts(filtered);
 }
 
 export function clearAllProducts(): void {
   try {
+    const products = getStoredProducts();
+    const slugs = products.map(p => p.slug);
+    saveDeletedSlugs(slugs);
     localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify([]));
   } catch (e) {
     console.error(e);

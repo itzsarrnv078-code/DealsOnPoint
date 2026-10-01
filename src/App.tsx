@@ -21,105 +21,142 @@ import { ProductManagerModal } from './components/ProductManagerModal';
 import { TrustModals } from './components/TrustModals';
 import { Footer } from './components/Footer';
 import { Tag, Clock, Search, X, Info } from 'lucide-react';
+import { 
+  categoryPath, 
+  legalPath, 
+  parseRoute, 
+  productPath, 
+  routeSlug, 
+  sectionPath 
+} from './services/routing';
+import { RouteLink } from './components/RouteLink';
 
 export default function App() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [products, setProducts] = useState<Product[]>(() => getStoredProducts());
+  const [categories, setCategories] = useState<string[]>(() => getStoredCategories());
+  const [route, setRoute] = useState(() => parseRoute(new URL(window.location.href)));
   const [activeSection, setActiveSection] = useState<NavSection>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isManagerOpen, setIsManagerOpen] = useState(false);
   const [activeLegalModal, setActiveLegalModal] = useState<LegalModalType>(null);
 
-  // Initialize data and check URL for deep-linked product
+  // Robust product lookup by exact slug, ID, normalized slug, or normalized name
+  const selectedProduct = useMemo(() => {
+    if (!route.productSlug) return null;
+    const target = routeSlug(route.productSlug);
+    return (
+      products.find(
+        (product) =>
+          product.slug === route.productSlug ||
+          product.id === route.productSlug ||
+          routeSlug(product.slug) === target ||
+          routeSlug(product.name) === target
+      ) || null
+    );
+  }, [products, route.productSlug]);
+
+  // Robust category lookup
+  const selectedCategoryObj = useMemo(() => {
+    if (!route.categorySlug) return null;
+    const target = routeSlug(route.categorySlug);
+    return categories.find((c) => routeSlug(c) === target) || null;
+  }, [categories, route.categorySlug]);
+
+  const missingRoute =
+    route.notFound ||
+    Boolean(route.productSlug && !selectedProduct) ||
+    Boolean(route.categorySlug && !selectedCategoryObj);
+
+  // Sync products and categories from storage and listen to popstate/hashchange
   useEffect(() => {
-    const loadedProducts = getStoredProducts();
-    const loadedCategories = getStoredCategories();
-    setProducts(loadedProducts);
-    setCategories(loadedCategories);
-
-    // Parse URL on load for /products/:slug or ?product=:slug
-    const parseUrlProduct = () => {
-      const path = window.location.pathname;
-      const searchParams = new URLSearchParams(window.location.search);
-      let targetSlug = searchParams.get('product');
-
-      if (!targetSlug && path.startsWith('/products/')) {
-        targetSlug = path.replace('/products/', '').replace(/\/$/, '');
-      }
-
-      if (targetSlug && loadedProducts.length > 0) {
-        const found = loadedProducts.find(
-          (p) => p.slug === targetSlug || p.id === targetSlug
-        );
-        if (found) {
-          setSelectedProduct(found);
-        }
-      }
+    const handleLocationChange = () => {
+      setRoute(parseRoute(new URL(window.location.href)));
+    };
+    const handleStorage = () => {
+      setProducts(getStoredProducts());
+      setCategories(getStoredCategories());
     };
 
-    parseUrlProduct();
-
-    // Listen to browser popstate (back/forward)
-    const handlePopState = () => {
-      parseUrlProduct();
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('storage', handleStorage);
     };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Update browser URL when a product is opened or closed
-  const handleSelectProduct = (product: Product) => {
-    setSelectedProduct(product);
-    try {
-      const newUrl = `/products/${product.slug}`;
-      window.history.pushState({ productId: product.id }, '', newUrl);
-    } catch (e) {
-      console.warn('Could not pushState', e);
-    }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleBackToDiscovery = () => {
-    setSelectedProduct(null);
-    try {
-      window.history.pushState({}, '', '/');
-    } catch (e) {
-      console.warn('Could not pushState', e);
-    }
-  };
-
-  // Header navigation smooth jump
-  const handleNavigate = (section: NavSection) => {
-    setActiveSection(section);
-
-    // If currently viewing a product detail, return to discovery first
+  // Update dynamic page title based on active view
+  useEffect(() => {
     if (selectedProduct) {
-      setSelectedProduct(null);
-      try {
-        window.history.pushState({}, '', '/');
-      } catch (e) {
-        console.warn('Could not pushState', e);
-      }
+      document.title = `${selectedProduct.name} - Deals On Point`;
+    } else if (selectedCategory) {
+      document.title = `${selectedCategory} Deals - Deals On Point`;
+    } else if (route.legal) {
+      const titles: Record<string, string> = {
+        contact: 'Contact Us',
+        disclosure: 'Affiliate Disclosure',
+        privacy: 'Privacy Policy',
+        terms: 'Terms & Conditions',
+        about: 'About Deals On Point'
+      };
+      document.title = `${titles[route.legal] || 'Legal'} - Deals On Point`;
+    } else {
+      document.title = 'Deals On Point - Smart Finds. Deals On Point.';
     }
+  }, [selectedProduct, selectedCategory, route.legal]);
 
-    if (section === 'home') {
-      setSelectedCategory(null);
-      setSearchQuery('');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else if (section === 'deals' || section === 'new-deals') {
-      setSelectedCategory(null);
-      const el = document.getElementById('deals-section');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    } else if (section === 'new-arrivals') {
-      setSelectedCategory(null);
-      const el = document.getElementById('new-arrivals-section');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    } else if (section === 'categories') {
-      const el = document.getElementById('categories-section');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
+  // Handle route state updates and section scrolling
+  useEffect(() => {
+    setActiveSection(route.section);
+    setSearchQuery(route.search);
+    setSelectedCategory(selectedCategoryObj || null);
+    setActiveLegalModal(route.legal);
+
+    const frame = window.requestAnimationFrame(() => {
+      const sectionIds: Partial<Record<NavSection, string>> = {
+        deals: 'deals-section',
+        'new-deals': 'deals-section',
+        'new-arrivals': 'new-arrivals-section',
+        categories: 'categories-section',
+        about: 'about-section',
+      };
+      const sectionId =
+        !route.productSlug &&
+        !route.categorySlug &&
+        !route.search &&
+        !route.legal &&
+        sectionIds[route.scrollSection];
+
+      if (sectionId) {
+        document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth' });
+      } else if (!route.legal && !route.productSlug) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [route, selectedCategoryObj]);
+
+  const navigate = (path: string, replace = false) => {
+    if (path !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
+    }
+    setRoute(parseRoute(new URL(window.location.href)));
+  };
+
+  const handleSelectProduct = (product: Product) => navigate(productPath(product.slug));
+  const handleBackToDiscovery = () => navigate('/');
+  const handleNavigate = (section: NavSection) => navigate(sectionPath(section));
+  const handleSelectCategory = (category: string | null) =>
+    navigate(category ? categoryPath(category) : '/');
+  const handleOpenLegal = (type: LegalModalType) => {
+    if (type) {
+      navigate(legalPath(type));
+    } else {
+      handleBackToDiscovery();
     }
   };
 
@@ -134,10 +171,6 @@ export default function App() {
   const handleUpdateProduct = (id: string, updates: Partial<Product>) => {
     updateProductInStorage(id, updates);
     setProducts(getStoredProducts());
-    if (selectedProduct && selectedProduct.id === id) {
-      const updated = getStoredProducts().find((p) => p.id === id);
-      if (updated) setSelectedProduct(updated);
-    }
   };
 
   const handleDeleteProduct = (id: string) => {
@@ -204,7 +237,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-[#090A0F] text-[#F5F7FA] font-sans selection:bg-[#3B5BDB] selection:text-white">
       
       {/* Top Affiliate Disclosure Bar */}
-      <TopDisclosureBar onOpenLegal={(type) => setActiveLegalModal(type)} />
+      <TopDisclosureBar onOpenLegal={handleOpenLegal} />
 
       {/* Top Header (Sticky Dark Semi-Transparent) */}
       <Header
@@ -213,25 +246,43 @@ export default function App() {
         searchQuery={searchQuery}
         onSearchChange={(q) => {
           setSearchQuery(q);
-          if (selectedProduct) setSelectedProduct(null);
+          const path = selectedCategory ? categoryPath(selectedCategory) : '/';
+          navigate(`${path}${q ? `?q=${encodeURIComponent(q)}` : ''}`, true);
         }}
-        onOpenLegal={(type) => setActiveLegalModal(type)}
+        onOpenLegal={handleOpenLegal}
         onOpenManager={() => setIsManagerOpen(true)}
         hasProducts={products.length > 0}
       />
 
       {/* Main Content Area */}
       <main className="flex-grow">
-        {selectedProduct ? (
+        {missingRoute ? (
+          <section className="py-20 max-w-2xl mx-auto px-4 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-[#181B24] border border-[#303541] flex items-center justify-center mx-auto mb-6 text-[#3B5BDB]">
+              <Search className="w-8 h-8" />
+            </div>
+            <h1 className="text-3xl font-display font-semibold mb-4 text-[#F5F7FA]">
+              {route.productSlug ? 'Product Unavailable' : 'Page Not Found'}
+            </h1>
+            <p className="text-[#A7AFBF] mb-8 leading-relaxed max-w-md mx-auto">
+              {route.productSlug
+                ? 'This product could not be found in our current catalog. Explore our latest curated deals below.'
+                : 'The link you visited does not match an available page or category.'}
+            </p>
+            <RouteLink
+              href="/"
+              onNavigate={handleBackToDiscovery}
+              className="inline-flex px-6 py-3 rounded-xl bg-[#3B5BDB] hover:bg-[#7657D5] text-white font-semibold transition-colors shadow-md shadow-[#3B5BDB]/25 cursor-pointer"
+            >
+              Back to Deals On Point
+            </RouteLink>
+          </section>
+        ) : selectedProduct ? (
           /* PRODUCT DETAIL DEDICATED VIEW (dealsonpoint.com/products/product-name) */
           <ProductDetail
             product={selectedProduct}
             onBack={handleBackToDiscovery}
-            onSelectCategory={(cat) => {
-              setSelectedCategory(cat);
-              setSelectedProduct(null);
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
+            onSelectCategory={handleSelectCategory}
           />
         ) : (
           /* HOMEPAGE & DISCOVERY FEED */
@@ -239,14 +290,8 @@ export default function App() {
             {/* Show Hero only when not filtering */}
             {!isFiltering && (
               <Hero
-                onExploreDeals={() => {
-                  const el = document.getElementById('deals-section');
-                  if (el) el.scrollIntoView({ behavior: 'smooth' });
-                }}
-                onBrowseCategories={() => {
-                  const el = document.getElementById('categories-section');
-                  if (el) el.scrollIntoView({ behavior: 'smooth' });
-                }}
+                onExploreDeals={() => handleNavigate('deals')}
+                onBrowseCategories={() => handleNavigate('categories')}
               />
             )}
 
@@ -275,10 +320,7 @@ export default function App() {
 
                   {/* Reset Filters button */}
                   <button
-                    onClick={() => {
-                      setSearchQuery('');
-                      setSelectedCategory(null);
-                    }}
+                    onClick={handleBackToDiscovery}
                     className="self-start sm:self-auto px-4 py-2 text-[14px] font-sans font-semibold text-[#F5F7FA] bg-[#181B24] hover:bg-[#1E222D] border border-[#303541] rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5 text-[#A7AFBF]" />
@@ -310,10 +352,7 @@ export default function App() {
                         : 'Try searching with different keywords, or clear your filters to view all categories.'}
                     </p>
                     <button
-                      onClick={() => {
-                        setSearchQuery('');
-                        setSelectedCategory(null);
-                      }}
+                      onClick={handleBackToDiscovery}
                       className="px-6 py-2.5 text-[14px] sm:text-[15px] font-sans font-semibold text-white bg-[#3B5BDB] hover:bg-[#7657D5] rounded-lg transition-colors shadow-md shadow-[#3B5BDB]/20 cursor-pointer"
                     >
                       Clear Filters
@@ -422,10 +461,7 @@ export default function App() {
                 <CategorySection
                   categories={categories}
                   selectedCategory={selectedCategory}
-                  onSelectCategory={(cat) => {
-                    setSelectedCategory(cat);
-                    window.scrollTo({ top: 350, behavior: 'smooth' });
-                  }}
+                  onSelectCategory={handleSelectCategory}
                   productCountByCategory={productCountByCategory}
                 />
 
@@ -461,7 +497,7 @@ export default function App() {
       {/* Footer in Near-Black #07080C with subtle Blue/Purple gradient accent line */}
       <Footer
         onNavigate={handleNavigate}
-        onOpenLegal={(type) => setActiveLegalModal(type)}
+        onOpenLegal={handleOpenLegal}
       />
 
       {/* Product Manager Modal (For adding products manually with Amazon affiliate links) */}
@@ -480,7 +516,7 @@ export default function App() {
       {/* Trust & Legal Information Modals */}
       <TrustModals
         type={activeLegalModal}
-        onClose={() => setActiveLegalModal(null)}
+        onClose={handleBackToDiscovery}
       />
 
     </div>
