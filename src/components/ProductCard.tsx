@@ -90,13 +90,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelectProdu
           </h3>
 
           {/* Optional Price Display */}
-          {product.price && (
+          {Boolean(product.price?.trim()) && (
             <div className="flex items-baseline gap-2 mb-2 font-sans">
               <span className="text-[17px] font-bold text-[#F5F7FA]">{product.price}</span>
-              {product.originalPrice && (
+              {Boolean(product.originalPrice?.trim()) && (
                 <span className="text-[13px] text-[#747D8C] line-through font-normal">{product.originalPrice}</span>
               )}
-              {product.discount && (
+              {Boolean(product.discount?.trim()) && (
                 <span className="text-[10px] font-bold text-[#3B5BDB] bg-[#3B5BDB]/15 px-1.5 py-0.5 rounded">
                   {product.discount}
                 </span>

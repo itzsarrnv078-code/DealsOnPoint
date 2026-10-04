@@ -113,14 +113,15 @@ export function getStoredProducts(): Product[] {
       }
     }
 
-    // Merge: Preserve all local products, and ensure all file-bundled products exist
-    const localIds = new Set(localList.map((p) => p.id));
-    const localSlugs = new Set(localList.map((p) => p.slug.toLowerCase()));
-    const merged = [...localList];
+    // Merge: All 10 bundled products from products.json are guaranteed to be present on all devices,
+    // plus any new custom products added locally by the user.
+    const fileIds = new Set(fileProducts.map((p) => p.id));
+    const fileSlugs = new Set(fileProducts.map((p) => p.slug.toLowerCase()));
+    const merged = [...fileProducts];
 
-    for (const fp of fileProducts) {
-      if (!localIds.has(fp.id) && !localSlugs.has(fp.slug.toLowerCase())) {
-        merged.push(fp);
+    for (const lp of localList) {
+      if (!fileIds.has(lp.id) && !fileSlugs.has(lp.slug.toLowerCase())) {
+        merged.unshift(lp); // User's custom added deals at top
       }
     }
 

@@ -309,19 +309,19 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
               <div className="p-5 sm:p-6 bg-[#181B24] rounded-2xl border border-[#303541] shadow-xl space-y-4">
                 
                 {/* Price Display if available */}
-                {product.price && (
+                {Boolean(product.price?.trim()) && (
                   <div className="flex items-baseline justify-between pb-3 border-b border-[#303541]/70">
                     <div className="flex items-baseline gap-2.5">
                       <span className="text-[28px] sm:text-[32px] font-display font-bold text-[#F5F7FA]">
                         {product.price}
                       </span>
-                      {product.originalPrice && (
+                      {Boolean(product.originalPrice?.trim()) && (
                         <span className="text-[16px] text-[#747D8C] line-through font-normal">
                           {product.originalPrice}
                         </span>
                       )}
                     </div>
-                    {product.discount && (
+                    {Boolean(product.discount?.trim()) && (
                       <span className="text-[12px] font-display font-bold uppercase tracking-wider text-[#3B5BDB] bg-[#3B5BDB]/15 px-2.5 py-1 rounded-md border border-[#3B5BDB]/30">
                         {product.discount}
                       </span>
