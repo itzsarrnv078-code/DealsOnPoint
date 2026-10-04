@@ -49,7 +49,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal }) => {
                 
                 {/* Pinterest */}
                 <a
-                  href="https://pinterest.com"
+                  href="https://www.pinterest.com/Dealsonpoint05/?actingBusinessId=1125548269280706121"
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Pinterest"
@@ -82,7 +82,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal }) => {
 
                 {/* X / Twitter */}
                 <a
-                  href="https://twitter.com"
+                  href="https://x.com/Dealonpoint1"
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="X / Twitter"

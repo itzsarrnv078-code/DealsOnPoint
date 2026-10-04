@@ -67,7 +67,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
         shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
         break;
       case 'twitter':
-        shareUrl = `https://twitter.com/intent/tweet?url=${encodedUrl}&text=${text}`;
+        shareUrl = `https://x.com/intent/tweet?url=${encodedUrl}&text=${text}&via=Dealonpoint1`;
         break;
       case 'telegram':
         shareUrl = `https://t.me/share/url?url=${encodedUrl}&text=${text}`;
