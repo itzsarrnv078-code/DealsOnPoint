@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Product } from '../types/product';
 import { 
   X, 
@@ -10,12 +10,30 @@ import {
   Link as LinkIcon,
   Tag,
   Layers,
-  Info,
-  Download,
-  Upload,
+  Database,
+  Cloud,
+  CloudUpload,
+  RefreshCw,
   Copy,
-  CheckCircle2
+  ExternalLink,
+  DollarSign,
+  AlertCircle,
+  CheckCircle2,
+  Code,
+  Download,
+  Upload
 } from 'lucide-react';
+import { 
+  checkDatabaseStatus, 
+  DatabaseStatus, 
+  migrateLocalProductsToCloud, 
+  scanAllLocallyStoredProducts, 
+  getSupabaseCredentials, 
+  saveSupabaseCredentials,
+  exportProductsToJsonFile,
+  importProductsFromJsonArray,
+  SUPABASE_SETUP_SQL 
+} from '../services/cloudDatabase';
 
 interface ProductManagerModalProps {
   isOpen: boolean;
@@ -28,6 +46,7 @@ interface ProductManagerModalProps {
   onAddCategory: (category: string) => void;
   onClearAll: () => void;
   onImportProducts?: (importedProducts: Product[]) => void;
+  onRefreshProducts?: () => void;
 }
 
 export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
@@ -41,8 +60,9 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
   onAddCategory,
   onClearAll,
   onImportProducts,
+  onRefreshProducts,
 }) => {
-  const [activeTab, setActiveTab] = useState<'add' | 'list' | 'categories'>('add');
+  const [activeTab, setActiveTab] = useState<'add' | 'list' | 'categories' | 'database'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -50,6 +70,9 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
   const [name, setName] = useState('');
   const [category, setCategory] = useState(categories[0] || 'Tech & Electronics');
   const [newCatInput, setNewCatInput] = useState('');
+  const [price, setPrice] = useState('');
+  const [originalPrice, setOriginalPrice] = useState('');
+  const [discount, setDiscount] = useState('');
   const [shortDescription, setShortDescription] = useState('');
   const [keyFeaturesText, setKeyFeaturesText] = useState('');
   const [productDetailsText, setProductDetailsText] = useState('');
@@ -59,8 +82,64 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
   const [isNewDeal, setIsNewDeal] = useState(true);
   const [isNewArrival, setIsNewArrival] = useState(true);
   const [isTrending, setIsTrending] = useState(false);
+  
+  // UI feedback states
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  // Export / Import states
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImportingFile, setIsImportingFile] = useState(false);
+
+  // Database & Migration states
+  const [dbStatus, setDbStatus] = useState<DatabaseStatus>({
+    provider: 'none',
+    isConfigured: false,
+    isConnected: false,
+    message: 'Checking database connection...',
+  });
+  const [checkingDb, setCheckingDb] = useState(false);
+  const [localProductsCount, setLocalProductsCount] = useState<number>(0);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationSummary, setMigrationSummary] = useState<{
+    newlyMigrated: number;
+    alreadyExisted: number;
+    total: number;
+  } | null>(null);
+
+  // Custom Supabase inputs in UI
+  const [inputSupabaseUrl, setInputSupabaseUrl] = useState('');
+  const [inputSupabaseAnonKey, setInputSupabaseAnonKey] = useState('');
+
+  // Scan local products and check DB status when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const creds = getSupabaseCredentials();
+    if (creds) {
+      setInputSupabaseUrl(creds.url);
+      setInputSupabaseAnonKey(creds.anonKey);
+    }
+
+    refreshDbAndLocalScan();
+  }, [isOpen]);
+
+  const refreshDbAndLocalScan = async () => {
+    setCheckingDb(true);
+    try {
+      const scanned = scanAllLocallyStoredProducts();
+      setLocalProductsCount(scanned.length);
+
+      const status = await checkDatabaseStatus();
+      setDbStatus(status);
+    } catch (e: any) {
+      console.warn('Error refreshing DB status:', e);
+    } finally {
+      setCheckingDb(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -81,10 +160,12 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
     setEditingId(p.id);
     setName(p.name);
     setCategory(p.category);
+    setPrice(p.price || '');
+    setOriginalPrice(p.originalPrice || '');
+    setDiscount(p.discount || '');
     setShortDescription(p.shortDescription);
-    setKeyFeaturesText(p.keyFeatures.join('\n'));
+    setKeyFeaturesText((p.keyFeatures || []).join('\n'));
     
-    // Format details
     if (p.details) {
       const detailsLines = Object.entries(p.details).map(([k, v]) => `${k}: ${v}`).join('\n');
       setProductDetailsText(detailsLines);
@@ -105,6 +186,9 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
     setEditingId(null);
     setName('');
     setCategory(categories[0] || 'Tech & Electronics');
+    setPrice('');
+    setOriginalPrice('');
+    setDiscount('');
     setShortDescription('');
     setKeyFeaturesText('');
     setProductDetailsText('');
@@ -118,7 +202,6 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!name.trim()) return;
 
     // Parse features
@@ -156,96 +239,161 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
     else if (isTrending) badge = 'TRENDING';
     else if (isNewArrival) badge = 'NEW';
 
+    const payload = {
+      name: name.trim(),
+      category,
+      price: price.trim() || undefined,
+      originalPrice: originalPrice.trim() || undefined,
+      discount: discount.trim() || undefined,
+      shortDescription: shortDescription.trim(),
+      keyFeatures,
+      details: Object.keys(details).length > 0 ? details : undefined,
+      mainImage: finalMainImage,
+      galleryImages: finalGallery,
+      amazonUrl: amazonUrl.trim() || 'https://www.amazon.com',
+      isNewDeal,
+      isNewArrival,
+      isTrending,
+      badge,
+    };
+
     if (editingId) {
-      onUpdateProduct(editingId, {
-        name: name.trim(),
-        category,
-        shortDescription: shortDescription.trim(),
-        keyFeatures,
-        details: Object.keys(details).length > 0 ? details : undefined,
-        mainImage: finalMainImage,
-        galleryImages: finalGallery,
-        amazonUrl: amazonUrl.trim() || 'https://www.amazon.com',
-        isNewDeal,
-        isNewArrival,
-        isTrending,
-        badge,
-      });
-      setSuccessMsg('Product updated successfully!');
+      onUpdateProduct(editingId, payload);
+      setSuccessMsg('Product updated & saved to online database!');
     } else {
-      onAddProduct({
-        name: name.trim(),
-        category,
-        shortDescription: shortDescription.trim(),
-        keyFeatures,
-        details: Object.keys(details).length > 0 ? details : undefined,
-        mainImage: finalMainImage,
-        galleryImages: finalGallery,
-        amazonUrl: amazonUrl.trim() || 'https://www.amazon.com',
-        isNewDeal,
-        isNewArrival,
-        isTrending,
-        badge,
-      });
-      setSuccessMsg('Product added to Deals On Point!');
+      onAddProduct(payload);
+      setSuccessMsg('Product added & saved to online database!');
     }
 
     handleResetForm();
-    setTimeout(() => setSuccessMsg(''), 3000);
+    setTimeout(() => setSuccessMsg(''), 3500);
   };
 
-  const handleDownloadJson = () => {
+  /**
+   * EXPORT PRODUCTS: Collects all saved products from localStorage, IndexedDB,
+   * and in-memory state into a single clean products.json file.
+   */
+  const handleExportProducts = async () => {
+    setIsExporting(true);
+    setErrorMsg('');
     try {
-      const dataStr = JSON.stringify(products, null, 2);
-      const blob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'products.json';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setSuccessMsg('Downloaded products.json backup successfully!');
-      setTimeout(() => setSuccessMsg(''), 3000);
+      const res = await exportProductsToJsonFile(products);
+      setSuccessMsg(`Exported ${res.count} products into ${res.filename} successfully!`);
+      setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err: any) {
-      alert('Could not download file: ' + err.message);
+      setErrorMsg(`Failed to export products: ${err?.message || String(err)}`);
+    } finally {
+      setIsExporting(false);
     }
   };
 
-  const handleCopyJson = async () => {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(products, null, 2));
-      setSuccessMsg('Copied products JSON to clipboard!');
-      setTimeout(() => setSuccessMsg(''), 3000);
-    } catch (err: any) {
-      alert('Could not copy JSON: ' + err.message);
-    }
-  };
-
-  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * IMPORT PRODUCTS: Reads products.json, skips duplicates, and saves to database.
+   */
+  const handleImportProductsFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setIsImportingFile(true);
+    setErrorMsg('');
+
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
-        const parsed = JSON.parse(event.target?.result as string);
-        if (Array.isArray(parsed)) {
-          if (onImportProducts) {
-            onImportProducts(parsed);
-          }
-          setSuccessMsg(`Imported ${parsed.length} products successfully!`);
-          setTimeout(() => setSuccessMsg(''), 3000);
-        } else {
-          alert('Invalid format: File must contain a JSON array of products.');
+        const rawContent = event.target?.result as string;
+        const parsed = JSON.parse(rawContent);
+
+        if (!Array.isArray(parsed)) {
+          setErrorMsg('Invalid format: File must contain a JSON array of products.');
+          setIsImportingFile(false);
+          return;
         }
+
+        const importResult = await importProductsFromJsonArray(parsed, products);
+
+        if (importResult.addedProducts.length > 0) {
+          if (onImportProducts) {
+            onImportProducts([...products, ...importResult.addedProducts]);
+          }
+          if (onRefreshProducts) {
+            onRefreshProducts();
+          }
+        }
+
+        setSuccessMsg(
+          `Import complete: ${importResult.importedCount} new products uploaded to database (${importResult.skippedCount} duplicates skipped)!`
+        );
+        setTimeout(() => setSuccessMsg(''), 5000);
+
+        if (importResult.errors.length > 0) {
+          setErrorMsg(`Warnings during import: ${importResult.errors.join(', ')}`);
+        }
+
+        await refreshDbAndLocalScan();
       } catch (err: any) {
-        alert('Failed to parse JSON file: ' + err.message);
+        setErrorMsg('Failed to parse JSON file: ' + err.message);
+      } finally {
+        setIsImportingFile(false);
       }
     };
+
     reader.readAsText(file);
-    // Reset file input so user can re-import if needed
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Safe migration handler for local products
+  const handleMigrateLocalProducts = async () => {
+    setIsMigrating(true);
+    setErrorMsg('');
+    setMigrationSummary(null);
+
+    try {
+      const res = await migrateLocalProductsToCloud();
+      setMigrationSummary({
+        newlyMigrated: res.newlyMigrated,
+        alreadyExisted: res.alreadyExisted,
+        total: res.totalScanned,
+      });
+
+      if (res.errors.length > 0) {
+        setErrorMsg(`Migrated with warnings: ${res.errors.join(', ')}`);
+      } else {
+        setSuccessMsg(`Migration complete: ${res.newlyMigrated} products uploaded to the cloud database!`);
+      }
+
+      // Refresh product list and database status
+      if (onRefreshProducts) onRefreshProducts();
+      await refreshDbAndLocalScan();
+    } catch (err: any) {
+      setErrorMsg(`Migration error: ${err?.message || String(err)}`);
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
+  // Save Supabase credentials entered directly in the modal
+  const handleSaveSupabaseConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      saveSupabaseCredentials(inputSupabaseUrl, inputSupabaseAnonKey);
+      setSuccessMsg('Database credentials saved in browser! Testing connection...');
+      await refreshDbAndLocalScan();
+      if (onRefreshProducts) onRefreshProducts();
+    } catch (err: any) {
+      setErrorMsg(`Failed to save config: ${err?.message || String(err)}`);
+    }
+  };
+
+  const handleCopySqlScript = async () => {
+    try {
+      await navigator.clipboard.writeText(SUPABASE_SETUP_SQL);
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 2500);
+    } catch (e) {
+      console.warn('Could not copy SQL', e);
+    }
   };
 
   const handleCreateCategory = (e: React.FormEvent) => {
@@ -261,13 +409,24 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
       <div className="bg-[#11131A] text-[#F5F7FA] rounded-2xl max-w-3xl w-full shadow-2xl border border-[#303541] overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* Modal Header */}
-        <div className="px-6 py-4.5 bg-[#090A0F] text-[#F5F7FA] flex items-center justify-between border-b border-[#303541]">
+        <div className="px-6 py-4 bg-[#090A0F] text-[#F5F7FA] flex items-center justify-between border-b border-[#303541]">
           <div>
-            <h2 className="text-lg font-bold font-display text-[#F5F7FA]">
-              Deals On Point · Product Manager
+            <h2 className="text-lg font-bold font-display text-[#F5F7FA] flex items-center gap-2">
+              <span>Deals On Point · Product Manager</span>
+              {dbStatus.isConnected ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-sans font-medium px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Cloud Online
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[11px] font-sans font-medium px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                  <AlertCircle className="w-3 h-3" />
+                  Cloud Ready
+                </span>
+              )}
             </h2>
             <p className="text-xs text-[#A7AFBF]">
-              Manually add products, images, and your Amazon Associates affiliate link
+              Save products directly to your online database with Amazon affiliate links & unique URLs
             </p>
           </div>
           <button
@@ -278,12 +437,49 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
           </button>
         </div>
 
+        {/* Prominent Export & Import Toolbar (Always visible in Admin modal) */}
+        <div className="bg-[#141822] border-b border-[#303541] px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#A7AFBF] font-medium flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5 text-[#3B5BDB]" />
+              Data Backup & Migration:
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Export Products Button */}
+            <button
+              type="button"
+              onClick={handleExportProducts}
+              disabled={isExporting}
+              className="px-3.5 py-1.5 bg-[#3B5BDB] hover:bg-[#7657D5] text-white text-xs font-semibold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              title="Collects all saved products into products.json without deleting any data"
+            >
+              <Download className={`w-3.5 h-3.5 ${isExporting ? 'animate-bounce' : ''}`} />
+              <span>{isExporting ? 'Exporting...' : 'Export Products'}</span>
+            </button>
+
+            {/* Import Products Button */}
+            <label className="px-3.5 py-1.5 bg-[#1E222D] hover:bg-[#282E3D] text-[#F5F7FA] border border-[#303541] hover:border-[#3B5BDB] text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer active:scale-95">
+              <Upload className={`w-3.5 h-3.5 text-[#3B5BDB] ${isImportingFile ? 'animate-spin' : ''}`} />
+              <span>{isImportingFile ? 'Uploading...' : 'Import Products'}</span>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".json"
+                onChange={handleImportProductsFile}
+                className="hidden"
+              />
+            </label>
+          </div>
+        </div>
+
         {/* Modal Tabs */}
-        <div className="flex border-b border-[#303541] bg-[#0D1017] px-6 pt-3 gap-2">
+        <div className="flex border-b border-[#303541] bg-[#0D1017] px-6 pt-3 gap-2 overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab('add')}
-            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeTab === 'add'
                 ? 'border-[#3B5BDB] text-[#3B5BDB]'
                 : 'border-transparent text-[#A7AFBF] hover:text-[#F5F7FA]'
@@ -292,10 +488,11 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
             <Plus className="w-3.5 h-3.5" />
             <span>{editingId ? 'Edit Product' : 'Add Product'}</span>
           </button>
+
           <button
             type="button"
             onClick={() => setActiveTab('list')}
-            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeTab === 'list'
                 ? 'border-[#3B5BDB] text-[#3B5BDB]'
                 : 'border-transparent text-[#A7AFBF] hover:text-[#F5F7FA]'
@@ -304,10 +501,11 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
             <Layers className="w-3.5 h-3.5" />
             <span>Added Products ({products.length})</span>
           </button>
+
           <button
             type="button"
             onClick={() => setActiveTab('categories')}
-            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               activeTab === 'categories'
                 ? 'border-[#3B5BDB] text-[#3B5BDB]'
                 : 'border-transparent text-[#A7AFBF] hover:text-[#F5F7FA]'
@@ -316,53 +514,154 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
             <Tag className="w-3.5 h-3.5" />
             <span>Categories ({categories.length})</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('database')}
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+              activeTab === 'database'
+                ? 'border-[#3B5BDB] text-[#3B5BDB]'
+                : 'border-transparent text-[#A7AFBF] hover:text-[#F5F7FA]'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5 text-[#3B5BDB]" />
+            <span>Cloud Database & Sync</span>
+            {localProductsCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 bg-[#3B5BDB] text-white text-[10px] rounded-full font-bold">
+                {localProductsCount}
+              </span>
+            )}
+          </button>
         </div>
 
-        {/* Notification Toast */}
+        {/* Notification Toasts */}
         {successMsg && (
-          <div className="bg-[#3B5BDB]/20 border-b border-[#3B5BDB]/40 text-[#3B5BDB] px-6 py-2.5 text-xs font-semibold flex items-center gap-2">
-            <Check className="w-4 h-4 text-[#3B5BDB]" />
+          <div className="bg-emerald-500/15 border-b border-emerald-500/30 text-emerald-400 px-6 py-2.5 text-xs font-semibold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
             <span>{successMsg}</span>
+          </div>
+        )}
+
+        {errorMsg && (
+          <div className="bg-rose-500/15 border-b border-rose-500/30 text-rose-400 px-6 py-2.5 text-xs font-semibold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{errorMsg}</span>
           </div>
         )}
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-6 flex-grow">
           
+          {/* TAB 1: ADD / EDIT PRODUCT */}
           {activeTab === 'add' && (
             <form onSubmit={handleSubmit} className="space-y-5">
               
+              {/* Local Storage Migration Banner if items detected */}
+              {localProductsCount > 0 && !editingId && (
+                <div className="p-3.5 rounded-xl bg-[#3B5BDB]/10 border border-[#3B5BDB]/30 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <CloudUpload className="w-5 h-5 text-[#3B5BDB] shrink-0" />
+                    <p className="text-xs text-[#F5F7FA]">
+                      <span className="font-semibold text-white">{localProductsCount} products</span> found saved in your current browser!
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleExportProducts}
+                      className="px-2.5 py-1 bg-[#1E222D] hover:bg-[#282E3D] text-[#F5F7FA] border border-[#303541] text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                    >
+                      Export Backup
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('database')}
+                      className="px-3 py-1 bg-[#3B5BDB] hover:bg-[#7657D5] text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0"
+                    >
+                      Import to Cloud →
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Product Name */}
               <div>
                 <label className="block text-xs font-bold text-[#F5F7FA] uppercase tracking-wider mb-1">
-                  Product Name *
+                  Product Name / Title *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Portable Power Bank"
+                  placeholder="e.g. BLAVOR Solar Power Bank 10000mAh"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm bg-[#181B24] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg focus:outline-none focus:border-[#3B5BDB]"
                 />
               </div>
 
-              {/* Category */}
-              <div>
-                <label className="block text-xs font-bold text-[#F5F7FA] uppercase tracking-wider mb-1">
-                  Product Category *
-                </label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm bg-[#181B24] border border-[#303541] text-[#F5F7FA] rounded-lg focus:outline-none focus:border-[#3B5BDB]"
-                >
-                  {categories.map((c) => (
-                    <option key={c} value={c} className="bg-[#181B24] text-[#F5F7FA]">
-                      {c}
-                    </option>
-                  ))}
-                </select>
+              {/* Category & Pricing in Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Category */}
+                <div>
+                  <label className="block text-xs font-bold text-[#F5F7FA] uppercase tracking-wider mb-1">
+                    Product Category *
+                  </label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full px-3.5 py-2 text-sm bg-[#181B24] border border-[#303541] text-[#F5F7FA] rounded-lg focus:outline-none focus:border-[#3B5BDB]"
+                  >
+                    {categories.map((c) => (
+                      <option key={c} value={c} className="bg-[#181B24] text-[#F5F7FA]">
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Price Display */}
+                <div>
+                  <label className="block text-xs font-bold text-[#F5F7FA] uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <DollarSign className="w-3.5 h-3.5 text-[#3B5BDB]" />
+                    Current Price (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. $29.99"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    className="w-full px-3.5 py-2 text-sm bg-[#181B24] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg focus:outline-none focus:border-[#3B5BDB]"
+                  />
+                </div>
+              </div>
+
+              {/* Additional Pricing / Discount */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#F5F7FA] uppercase tracking-wider mb-1">
+                    Original Price / List Price (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. $49.99 (shown with strikethrough)"
+                    value={originalPrice}
+                    onChange={(e) => setOriginalPrice(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-[#181B24] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg focus:outline-none focus:border-[#3B5BDB]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#F5F7FA] uppercase tracking-wider mb-1">
+                    Discount Badge / Savings (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 40% OFF or Save $20"
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-[#181B24] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg focus:outline-none focus:border-[#3B5BDB]"
+                  />
+                </div>
               </div>
 
               {/* Product Images */}
@@ -374,7 +673,7 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
                   </label>
                   <input
                     type="url"
-                    placeholder="https://... (direct image link)"
+                    placeholder="https://... (direct image link or Unsplash)"
                     value={mainImage}
                     onChange={(e) => setMainImage(e.target.value)}
                     className="w-full px-3 py-2 text-xs bg-[#181B24] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg focus:outline-none focus:border-[#3B5BDB]"
@@ -399,12 +698,12 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
               {/* Short Product Description */}
               <div>
                 <label className="block text-xs font-bold text-[#F5F7FA] uppercase tracking-wider mb-1">
-                  Product Description / Information *
+                  Product Description *
                 </label>
                 <textarea
                   rows={2}
                   required
-                  placeholder="Concise, clear description of the product and what makes it useful."
+                  placeholder="Concise, engaging summary of the product and what makes it valuable."
                   value={shortDescription}
                   onChange={(e) => setShortDescription(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm bg-[#181B24] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg focus:outline-none focus:border-[#3B5BDB]"
@@ -418,9 +717,10 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
                 </label>
                 <textarea
                   rows={3}
-                  placeholder={`Compact magnetic portable charger
-Strong magnetic snap aligned for effortless wireless charging
-USB-C fast charging port for rapid top-ups`}
+                  placeholder={`Wireless Qi charging + USB-C fast charge
+Solar charging panel for emergencies
+Rugged waterproof and shockproof design
+Dual bright LED flashlight with compass`}
                   value={keyFeaturesText}
                   onChange={(e) => setKeyFeaturesText(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm bg-[#181B24] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg focus:outline-none focus:border-[#3B5BDB]"
@@ -430,13 +730,13 @@ USB-C fast charging port for rapid top-ups`}
               {/* Useful Product Information / Details */}
               <div>
                 <label className="block text-xs font-bold text-[#F5F7FA] uppercase tracking-wider mb-1">
-                  Useful Product Details (Format: Label: Value, one per line)
+                  Technical Specifications (Format: Label: Value, one per line)
                 </label>
                 <textarea
                   rows={2}
                   placeholder={`Capacity: 10,000 mAh
-Weight: 6.8 oz
-Material: Anodized Aluminum`}
+Weight: 8.8 oz
+Outputs: Qi Wireless + USB-A + USB-C`}
                   value={productDetailsText}
                   onChange={(e) => setProductDetailsText(e.target.value)}
                   className="w-full px-3.5 py-2 text-xs bg-[#181B24] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg focus:outline-none focus:border-[#3B5BDB]"
@@ -447,7 +747,7 @@ Material: Anodized Aluminum`}
               <div>
                 <label className="block text-xs font-bold text-[#F5F7FA] uppercase tracking-wider mb-1 flex items-center gap-1">
                   <LinkIcon className="w-3.5 h-3.5 text-[#3B5BDB]" />
-                  Amazon Associates Affiliate Link *
+                  Amazon Associates Affiliate URL *
                 </label>
                 <input
                   type="url"
@@ -458,18 +758,16 @@ Material: Anodized Aluminum`}
                   className="w-full px-3.5 py-2 text-sm bg-[#181B24] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg focus:outline-none focus:border-[#3B5BDB] font-mono text-xs"
                 />
                 <p className="text-[11px] text-[#747D8C] mt-1">
-                  Your individual affiliate link for this product. Customers will visit this link when clicking “View Deal on Amazon”.
+                  Customers are redirected to this Amazon affiliate link when clicking “View Deal on Amazon”.
                 </p>
               </div>
 
               {/* Placement Toggles: New Deal, New Arrival, Trending */}
               <div className="p-4 bg-[#181B24] rounded-xl border border-[#303541]">
                 <div className="text-xs font-bold text-[#F5F7FA] uppercase tracking-wider mb-3">
-                  Product Placement & Badges
+                  Product Badges & Placement
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  
-                  {/* New Deal */}
                   <label className="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#11131A] border border-[#303541] cursor-pointer hover:border-[#D63A4A] transition-colors">
                     <input
                       type="checkbox"
@@ -479,11 +777,10 @@ Material: Anodized Aluminum`}
                     />
                     <div>
                       <div className="text-xs font-semibold text-[#F5F7FA]">New Deal</div>
-                      <div className="text-[10px] text-[#747D8C]">Show in “New Deals”</div>
+                      <div className="text-[10px] text-[#747D8C]">Show red badge</div>
                     </div>
                   </label>
 
-                  {/* New Arrival */}
                   <label className="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#11131A] border border-[#303541] cursor-pointer hover:border-[#7657D5] transition-colors">
                     <input
                       type="checkbox"
@@ -493,11 +790,10 @@ Material: Anodized Aluminum`}
                     />
                     <div>
                       <div className="text-xs font-semibold text-[#F5F7FA]">New Arrival</div>
-                      <div className="text-[10px] text-[#747D8C]">Show in “New Arrivals”</div>
+                      <div className="text-[10px] text-[#747D8C]">Show in New Arrivals</div>
                     </div>
                   </label>
 
-                  {/* Trending */}
                   <label className="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#11131A] border border-[#303541] cursor-pointer hover:border-[#3B5BDB] transition-colors">
                     <input
                       type="checkbox"
@@ -507,170 +803,151 @@ Material: Anodized Aluminum`}
                     />
                     <div>
                       <div className="text-xs font-semibold text-[#F5F7FA]">Trending</div>
-                      <div className="text-[10px] text-[#747D8C]">Show in “Trending Finds”</div>
+                      <div className="text-[10px] text-[#747D8C]">Show in Trending Deals</div>
                     </div>
                   </label>
                 </div>
               </div>
 
-              {/* Form Buttons */}
+              {/* Form Actions */}
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#303541]">
                 {editingId && (
                   <button
                     type="button"
                     onClick={handleResetForm}
-                    className="px-4 py-2 text-xs font-medium text-[#A7AFBF] hover:text-[#F5F7FA] border border-[#303541] rounded-lg hover:bg-[#181B24] transition-colors cursor-pointer"
+                    className="px-4 py-2 text-xs font-semibold text-[#A7AFBF] hover:text-[#F5F7FA] rounded-lg transition-colors cursor-pointer"
                   >
-                    Cancel Editing
+                    Cancel Edit
                   </button>
                 )}
                 <button
                   type="submit"
-                  className="px-6 py-2.5 text-xs font-semibold text-white bg-[#3B5BDB] hover:bg-[#7657D5] rounded-lg transition-colors shadow-md shadow-[#3B5BDB]/20 cursor-pointer"
+                  className="px-5 py-2.5 bg-[#3B5BDB] hover:bg-[#7657D5] text-white text-xs font-semibold rounded-lg shadow-md transition-all cursor-pointer flex items-center gap-1.5"
                 >
-                  {editingId ? 'Save Changes' : 'Publish Product to Deals On Point'}
+                  <Check className="w-4 h-4" />
+                  <span>{editingId ? 'Update Product in Cloud' : 'Publish Product to Cloud'}</span>
                 </button>
               </div>
-
             </form>
           )}
 
+          {/* TAB 2: LIST PRODUCTS */}
           {activeTab === 'list' && (
             <div className="space-y-4">
-              
-              {/* Data Sync & Backup Toolbar for Netlify & Source of Truth */}
-              <div className="p-3.5 bg-[#181B24] rounded-xl border border-[#303541] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 text-[#A7AFBF]">
-                  <CheckCircle2 className="w-4 h-4 text-[#3B5BDB] shrink-0" />
-                  <span>
-                    <strong className="text-[#F5F7FA]">Single Source of Truth:</strong> Synced for Netlify deployments &amp; live preview.
-                  </span>
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#303541]">
+                <div className="text-xs text-[#A7AFBF]">
+                  Displaying <span className="font-semibold text-white">{products.length}</span> live products
                 </div>
-                
-                <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    accept=".json,application/json"
-                    onChange={handleImportFile}
-                    className="hidden"
-                  />
-                  
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-2.5 py-1.5 bg-[#11131A] hover:bg-[#1E222D] border border-[#303541] text-[#F5F7FA] rounded-md transition-colors flex items-center gap-1.5 cursor-pointer"
-                    title="Import a products.json file"
-                  >
-                    <Upload className="w-3.5 h-3.5 text-[#3B5BDB]" />
-                    <span>Import JSON</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCopyJson}
-                    className="px-2.5 py-1.5 bg-[#11131A] hover:bg-[#1E222D] border border-[#303541] text-[#F5F7FA] rounded-md transition-colors flex items-center gap-1.5 cursor-pointer"
-                    title="Copy all products data to clipboard as JSON"
-                  >
-                    <Copy className="w-3.5 h-3.5 text-[#7657D5]" />
-                    <span>Copy JSON</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDownloadJson}
-                    className="px-2.5 py-1.5 bg-[#3B5BDB]/20 hover:bg-[#3B5BDB]/30 border border-[#3B5BDB]/40 text-[#3B5BDB] rounded-md transition-colors flex items-center gap-1.5 cursor-pointer font-semibold"
-                    title="Download backup file of all products"
+                    onClick={handleExportProducts}
+                    disabled={isExporting}
+                    className="px-3 py-1.5 bg-[#3B5BDB] hover:bg-[#7657D5] text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Download Backup</span>
+                    <span>{isExporting ? 'Exporting...' : 'Export products.json'}</span>
                   </button>
+                  <label className="px-3 py-1.5 bg-[#181B24] hover:bg-[#1E222D] text-[#A7AFBF] hover:text-white border border-[#303541] rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Import JSON</span>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept=".json"
+                      onChange={handleImportProductsFile}
+                      className="hidden"
+                    />
+                  </label>
+                  {products.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm('Are you sure you want to clear all products?')) {
+                          onClearAll();
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      Clear All
+                    </button>
+                  )}
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-[#A7AFBF] pb-2 border-b border-[#303541]">
-                <span>{products.length === 0 ? 'No products have been added yet.' : `${products.length} products published`}</span>
-                {products.length > 0 && (
-                  <button
-                    onClick={onClearAll}
-                    className="text-xs text-[#D63A4A] hover:text-red-400 flex items-center gap-1 transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Clear all products</span>
-                  </button>
-                )}
               </div>
 
               {products.length === 0 ? (
-                <div className="py-12 text-center text-[#747D8C] text-xs">
-                  <p>Your product list is completely clean and empty.</p>
-                  <button
-                    onClick={() => setActiveTab('add')}
-                    className="mt-3 text-[#3B5BDB] hover:underline font-semibold cursor-pointer"
-                  >
-                    Click here to add your first product
-                  </button>
+                <div className="text-center py-12 text-[#747D8C] text-sm">
+                  No products added yet. Use the "Add Product" tab above to add your first deal!
                 </div>
               ) : (
-                <div className="divide-y divide-[#303541] max-h-[50vh] overflow-y-auto">
+                <div className="space-y-2.5">
                   {products.map((p) => (
-                    <div key={p.id} className="py-3 flex items-center justify-between gap-4">
+                    <div
+                      key={p.id}
+                      className="p-3 bg-[#181B24] border border-[#303541] rounded-xl flex items-center justify-between gap-4 group hover:border-[#3B5BDB]/50 transition-colors"
+                    >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-12 h-12 rounded-lg bg-[#181B24] overflow-hidden shrink-0 border border-[#303541]">
-                          <img
-                            src={p.mainImage}
-                            alt={p.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
+                        <img
+                          src={p.mainImage}
+                          alt={p.name}
+                          referrerPolicy="no-referrer"
+                          className="w-12 h-12 object-cover rounded-lg bg-[#11131A] shrink-0"
+                        />
                         <div className="min-w-0">
-                          <div className="text-sm font-semibold text-[#F5F7FA] truncate">
+                          <h4 className="text-sm font-semibold text-[#F5F7FA] truncate">
                             {p.name}
-                          </div>
-                          <div className="text-xs text-[#747D8C] flex items-center gap-2">
-                            <span>{p.category}</span>
-                            {p.isNewDeal && (
-                              <span className="text-[#D63A4A] font-bold text-[10px]">Deal</span>
-                            )}
-                            {p.isTrending && (
-                              <span className="text-[#3B5BDB] font-bold text-[10px]">Trending</span>
+                          </h4>
+                          <div className="flex items-center gap-2 text-[11px] text-[#747D8C] mt-0.5">
+                            <span className="text-[#3B5BDB]">{p.category}</span>
+                            <span>•</span>
+                            <span className="font-mono text-[10px] text-[#A7AFBF]">/product/{p.slug}</span>
+                            {p.price && (
+                              <>
+                                <span>•</span>
+                                <span className="font-bold text-white">{p.price}</span>
+                              </>
                             )}
                           </div>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
+                        {/* Copy Link */}
                         <button
                           type="button"
                           onClick={() => handleCopyProductUrl(p)}
-                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                            copiedSlug === p.slug 
-                              ? 'text-emerald-400 bg-emerald-500/10' 
-                              : 'text-[#A7AFBF] hover:text-[#3B5BDB] hover:bg-[#181B24]'
+                          className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                            copiedSlug === p.slug
+                              ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
+                              : 'border-[#303541] text-[#A7AFBF] hover:text-[#3B5BDB] hover:border-[#3B5BDB]'
                           }`}
-                          title={copiedSlug === p.slug ? "URL copied to clipboard!" : "Copy direct product URL"}
+                          title="Copy direct product URL"
                         >
-                          {copiedSlug === p.slug ? (
-                            <Check className="w-4 h-4" />
-                          ) : (
-                            <LinkIcon className="w-4 h-4" />
-                          )}
+                          {copiedSlug === p.slug ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
+
+                        {/* Edit Button */}
                         <button
                           type="button"
                           onClick={() => handleEditClick(p)}
-                          className="p-1.5 text-[#A7AFBF] hover:text-[#3B5BDB] hover:bg-[#181B24] rounded-lg transition-colors cursor-pointer"
+                          className="p-1.5 border border-[#303541] text-[#A7AFBF] hover:text-[#3B5BDB] hover:border-[#3B5BDB] rounded-lg transition-colors cursor-pointer"
                           title="Edit product"
                         >
-                          <Edit3 className="w-4 h-4" />
+                          <Edit3 className="w-3.5 h-3.5" />
                         </button>
+
+                        {/* Delete Button */}
                         <button
                           type="button"
-                          onClick={() => onDeleteProduct(p.id)}
-                          className="p-1.5 text-[#A7AFBF] hover:text-[#D63A4A] hover:bg-[#181B24] rounded-lg transition-colors cursor-pointer"
+                          onClick={() => {
+                            if (confirm(`Delete "${p.name}"?`)) {
+                              onDeleteProduct(p.id);
+                            }
+                          }}
+                          className="p-1.5 border border-[#303541] text-[#A7AFBF] hover:text-rose-400 hover:border-rose-400 rounded-lg transition-colors cursor-pointer"
                           title="Delete product"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -680,43 +957,285 @@ Material: Anodized Aluminum`}
             </div>
           )}
 
+          {/* TAB 3: CATEGORIES */}
           {activeTab === 'categories' && (
             <div className="space-y-5">
               <form onSubmit={handleCreateCategory} className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="Enter new category name..."
+                  placeholder="New category name (e.g. Smart Home)"
                   value={newCatInput}
                   onChange={(e) => setNewCatInput(e.target.value)}
                   className="flex-grow px-3.5 py-2 text-sm bg-[#181B24] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg focus:outline-none focus:border-[#3B5BDB]"
                 />
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold text-white bg-[#3B5BDB] hover:bg-[#7657D5] rounded-lg transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 bg-[#3B5BDB] hover:bg-[#7657D5] text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0"
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Category</span>
+                  Add Category
                 </button>
               </form>
 
-              <div className="border border-[#303541] rounded-xl overflow-hidden divide-y divide-[#303541]">
-                {categories.map((c) => {
-                  const count = products.filter((p) => p.category === c).length;
-                  return (
-                    <div key={c} className="p-3.5 flex items-center justify-between bg-[#181B24] text-sm">
-                      <span className="font-medium text-[#F5F7FA]">{c}</span>
-                      <span className="text-xs text-[#A7AFBF] bg-[#11131A] px-2.5 py-0.5 rounded-full border border-[#303541]">
-                        {count} {count === 1 ? 'item' : 'items'}
-                      </span>
-                    </div>
-                  );
-                })}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                {categories.map((c) => (
+                  <div
+                    key={c}
+                    className="p-3 bg-[#181B24] border border-[#303541] rounded-xl flex items-center justify-between text-xs text-[#F5F7FA]"
+                  >
+                    <span className="font-medium truncate">{c}</span>
+                    <span className="text-[10px] text-[#747D8C] bg-[#11131A] px-2 py-0.5 rounded-full font-mono">
+                      {products.filter((p) => p.category === c).length} deals
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
 
-        </div>
+          {/* TAB 4: CLOUD DATABASE & MIGRATION */}
+          {activeTab === 'database' && (
+            <div className="space-y-6">
+              
+              {/* 1. Database Connection Status */}
+              <div className="p-4 rounded-xl bg-[#181B24] border border-[#303541] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Cloud className="w-5 h-5 text-[#3B5BDB]" />
+                    <h3 className="text-sm font-bold font-display text-white">
+                      Online Database Status
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={refreshDbAndLocalScan}
+                    disabled={checkingDb}
+                    className="text-xs text-[#A7AFBF] hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${checkingDb ? 'animate-spin' : ''}`} />
+                    <span>Refresh Status</span>
+                  </button>
+                </div>
 
+                <div className="p-3 rounded-lg bg-[#11131A] border border-[#303541] flex items-start gap-3">
+                  {dbStatus.isConnected ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  )}
+                  <div className="text-xs space-y-1">
+                    <p className={`font-semibold ${dbStatus.isConnected ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {dbStatus.message}
+                    </p>
+                    {dbStatus.details && (
+                      <p className="text-[#A7AFBF] text-[11px] leading-relaxed">
+                        {dbStatus.details}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Export & Import JSON Section */}
+              <div className="p-5 rounded-xl bg-[#181B24] border border-[#303541] space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold font-display text-white flex items-center gap-2">
+                    <Download className="w-4 h-4 text-[#3B5BDB]" />
+                    Export & Import JSON File (products.json)
+                  </h3>
+                  <p className="text-xs text-[#A7AFBF] mt-1 leading-relaxed">
+                    Export all products currently stored in your browser or database into a clean <code>products.json</code> file. You can safely keep this file as a backup or import it anytime into Supabase, Firebase, or another database without creating duplicate products.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleExportProducts}
+                    disabled={isExporting}
+                    className="px-4 py-2 bg-[#3B5BDB] hover:bg-[#7657D5] text-white text-xs font-semibold rounded-lg shadow-sm transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    <Download className={`w-4 h-4 ${isExporting ? 'animate-bounce' : ''}`} />
+                    <span>{isExporting ? 'Exporting...' : 'Export products.json'}</span>
+                  </button>
+
+                  <label className="px-4 py-2 bg-[#11131A] hover:bg-[#1E222D] text-[#F5F7FA] border border-[#303541] hover:border-[#3B5BDB] text-xs font-semibold rounded-lg transition-all flex items-center gap-2 cursor-pointer">
+                    <Upload className="w-4 h-4 text-[#3B5BDB]" />
+                    <span>Import products.json to Database</span>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept=".json"
+                      onChange={handleImportProductsFile}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* 3. One-Time Safe Browser Storage Migration */}
+              <div className="p-5 rounded-xl bg-[#181B24] border border-[#303541] space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-bold font-display text-white flex items-center gap-2">
+                      <CloudUpload className="w-4 h-4 text-[#3B5BDB]" />
+                      Direct Browser-to-Cloud Migration
+                    </h3>
+                    <p className="text-xs text-[#A7AFBF] mt-1 leading-relaxed">
+                      Safe migration: Reads all products currently saved in your browser storage (localStorage / IndexedDB) and uploads them directly to your online database. No data is lost or overwritten, and duplicate products are automatically skipped.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-lg bg-[#11131A] border border-[#303541] flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs">
+                    <span className="text-[#747D8C]">Locally detected products in this browser:</span>{' '}
+                    <span className="font-bold text-white">{localProductsCount} products</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleMigrateLocalProducts}
+                    disabled={isMigrating || localProductsCount === 0}
+                    className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
+                      localProductsCount > 0
+                        ? 'bg-[#3B5BDB] hover:bg-[#7657D5] text-white shadow-md'
+                        : 'bg-[#303541] text-[#747D8C] cursor-not-allowed'
+                    }`}
+                  >
+                    <CloudUpload className={`w-4 h-4 ${isMigrating ? 'animate-bounce' : ''}`} />
+                    <span>{isMigrating ? 'Migrating Products...' : 'Import Existing Products'}</span>
+                  </button>
+                </div>
+
+                {migrationSummary && (
+                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-400 space-y-1">
+                    <p className="font-semibold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4" />
+                      Migration Completed Successfully:
+                    </p>
+                    <ul className="list-disc list-inside text-[11px] text-[#A7AFBF] space-y-0.5 pl-1">
+                      <li>Total products scanned: <strong className="text-white">{migrationSummary.total}</strong></li>
+                      <li>Newly uploaded to online database: <strong className="text-emerald-400">{migrationSummary.newlyMigrated}</strong></li>
+                      <li>Already present in online database (avoided duplicate): <strong className="text-white">{migrationSummary.alreadyExisted}</strong></li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* 4. Supabase Credentials Configuration */}
+              <div className="p-5 rounded-xl bg-[#181B24] border border-[#303541] space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold font-display text-white flex items-center gap-2">
+                    <Database className="w-4 h-4 text-[#3B5BDB]" />
+                    Supabase Online Database Settings
+                  </h3>
+                  <p className="text-xs text-[#A7AFBF] mt-1">
+                    Connect your free Supabase project to make all added products instantly visible to every visitor on mobile, desktop, incognito, and Netlify.
+                  </p>
+                </div>
+
+                <form onSubmit={handleSaveSupabaseConfig} className="space-y-3 text-xs">
+                  <div>
+                    <label className="block font-bold text-[#F5F7FA] uppercase tracking-wider mb-1">
+                      Supabase Project URL
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://xyzcompany.supabase.co"
+                      value={inputSupabaseUrl}
+                      onChange={(e) => setInputSupabaseUrl(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#11131A] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg font-mono text-xs focus:outline-none focus:border-[#3B5BDB]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-[#F5F7FA] uppercase tracking-wider mb-1">
+                      Supabase Anon Public API Key
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="eyJhbGciOi..."
+                      value={inputSupabaseAnonKey}
+                      onChange={(e) => setInputSupabaseAnonKey(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#11131A] border border-[#303541] text-[#F5F7FA] placeholder-[#747D8C] rounded-lg font-mono text-xs focus:outline-none focus:border-[#3B5BDB]"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <a
+                      href="https://supabase.com/dashboard"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#3B5BDB] hover:underline flex items-center gap-1 text-[11px]"
+                    >
+                      <span>Open Supabase Dashboard</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-[#3B5BDB] hover:bg-[#7657D5] text-white font-semibold rounded-lg shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Save & Test Connection</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* 5. Supabase SQL Setup Script (1-Click Copy) */}
+              <div className="p-5 rounded-xl bg-[#181B24] border border-[#303541] space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold font-display text-white flex items-center gap-2">
+                    <Code className="w-4 h-4 text-[#3B5BDB]" />
+                    Supabase SQL Table Script (1-Click Setup)
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={handleCopySqlScript}
+                    className="px-3 py-1 bg-[#11131A] hover:bg-[#1E222D] text-xs font-semibold text-white border border-[#303541] hover:border-[#3B5BDB] rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {copiedSql ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400">Copied SQL!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3 text-[#747D8C]" />
+                        <span>Copy SQL</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-[#A7AFBF]">
+                  In your Supabase project, go to the <strong>SQL Editor</strong> tab on the left, paste this script, and click <strong>Run</strong>. This creates the <code className="text-white bg-[#11131A] px-1 py-0.5 rounded">products</code> table and enables public access so all visitors can browse your deals.
+                </p>
+                <pre className="p-3 bg-[#090A0F] border border-[#303541] rounded-lg text-[11px] font-mono text-[#A7AFBF] overflow-x-auto max-h-36">
+                  {SUPABASE_SETUP_SQL}
+                </pre>
+              </div>
+
+              {/* 6. Netlify Environment Variables Guide */}
+              <div className="p-5 rounded-xl bg-[#181B24] border border-[#303541] space-y-3 text-xs">
+                <h3 className="text-sm font-bold font-display text-white">
+                  Netlify Deployment Configuration
+                </h3>
+                <p className="text-[#A7AFBF] leading-relaxed">
+                  To have your site automatically connect to your online database when deployed on Netlify:
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-[#A7AFBF] pl-1">
+                  <li>Go to your <strong>Netlify Site Dashboard</strong> &rarr; <strong>Site configuration</strong> &rarr; <strong>Environment variables</strong>.</li>
+                  <li>Add variable <code className="text-white font-mono bg-[#11131A] px-1.5 py-0.5 rounded">VITE_SUPABASE_URL</code> with your Project URL.</li>
+                  <li>Add variable <code className="text-white font-mono bg-[#11131A] px-1.5 py-0.5 rounded">VITE_SUPABASE_ANON_KEY</code> with your anon public key.</li>
+                  <li>Click <strong>Trigger deploy</strong> &rarr; <strong>Deploy site</strong>.</li>
+                </ol>
+              </div>
+
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );

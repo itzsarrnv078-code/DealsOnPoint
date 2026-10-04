@@ -308,6 +308,27 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
             <div className="pt-2 font-sans">
               <div className="p-5 sm:p-6 bg-[#181B24] rounded-2xl border border-[#303541] shadow-xl space-y-4">
                 
+                {/* Price Display if available */}
+                {product.price && (
+                  <div className="flex items-baseline justify-between pb-3 border-b border-[#303541]/70">
+                    <div className="flex items-baseline gap-2.5">
+                      <span className="text-[28px] sm:text-[32px] font-display font-bold text-[#F5F7FA]">
+                        {product.price}
+                      </span>
+                      {product.originalPrice && (
+                        <span className="text-[16px] text-[#747D8C] line-through font-normal">
+                          {product.originalPrice}
+                        </span>
+                      )}
+                    </div>
+                    {product.discount && (
+                      <span className="text-[12px] font-display font-bold uppercase tracking-wider text-[#3B5BDB] bg-[#3B5BDB]/15 px-2.5 py-1 rounded-md border border-[#3B5BDB]/30">
+                        {product.discount}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Large Button in Deep Electric Blue #3B5BDB hover #7657D5 */}
                 <a
                   href={product.amazonUrl || 'https://www.amazon.com'}

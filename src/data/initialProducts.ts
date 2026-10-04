@@ -13,4 +13,4 @@ export const INITIAL_CATEGORIES = [
 ];
 
 // Single source of truth for products bundled into the production build.
-export const INITIAL_PRODUCTS: Product[] = (Array.isArray(productsData) ? productsData : []) as Product[];
+export const INITIAL_PRODUCTS: Product[] = (Array.isArray(productsData) ? (productsData as unknown as Product[]) : []);

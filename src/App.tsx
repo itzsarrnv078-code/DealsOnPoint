@@ -12,7 +12,8 @@ import {
   syncLocalProductsWithServer,
   findProductBySlugOrId,
   findCategoryBySlug,
-  generateSlug
+  generateSlug,
+  fetchFreshProducts
 } from './services/productStorage';
 import { TopDisclosureBar } from './components/TopDisclosureBar';
 import { Header } from './components/Header';
@@ -49,7 +50,7 @@ export default function App() {
     syncLocalProductsWithServer();
 
     // Parse URL on load for /product/:slug, /products/:slug, /category/:slug, ?product=:slug, ?category=:slug
-    const parseUrlProduct = () => {
+    const parseUrlProduct = (overrideProducts?: Product[]) => {
       const path = window.location.pathname;
       const searchParams = new URLSearchParams(window.location.search);
       let targetProductSlug = searchParams.get('product') || searchParams.get('p') || searchParams.get('id');
@@ -71,7 +72,7 @@ export default function App() {
         }
       }
 
-      const currentProducts = getStoredProducts();
+      const currentProducts = overrideProducts || getStoredProducts();
       const currentCategories = getStoredCategories();
 
       if (targetProductSlug) {
@@ -101,6 +102,14 @@ export default function App() {
     };
 
     parseUrlProduct();
+
+    // Asynchronously fetch latest online products from Supabase / Firebase cloud database
+    fetchFreshProducts().then((fresh) => {
+      if (fresh && fresh.length > 0) {
+        setProducts(fresh);
+        parseUrlProduct(fresh);
+      }
+    });
 
     // Listen to browser popstate (back/forward)
     const handlePopState = () => {
@@ -189,15 +198,15 @@ export default function App() {
   };
 
   // Management methods for adding/editing products
-  const handleAddProduct = (productData: Omit<Product, 'id' | 'slug' | 'createdAt'>) => {
-    const newProduct = addProductToStorage(productData);
+  const handleAddProduct = async (productData: Omit<Product, 'id' | 'slug' | 'createdAt'>) => {
+    const newProduct = await addProductToStorage(productData);
     setProducts(getStoredProducts());
     setCategories(getStoredCategories());
     return newProduct;
   };
 
-  const handleUpdateProduct = (id: string, updates: Partial<Product>) => {
-    updateProductInStorage(id, updates);
+  const handleUpdateProduct = async (id: string, updates: Partial<Product>) => {
+    await updateProductInStorage(id, updates);
     setProducts(getStoredProducts());
     if (selectedProduct && selectedProduct.id === id) {
       const updated = getStoredProducts().find((p) => p.id === id);
@@ -205,12 +214,18 @@ export default function App() {
     }
   };
 
-  const handleDeleteProduct = (id: string) => {
-    deleteProductFromStorage(id);
+  const handleDeleteProduct = async (id: string) => {
+    await deleteProductFromStorage(id);
     setProducts(getStoredProducts());
     if (selectedProduct && selectedProduct.id === id) {
       handleBackToDiscovery();
     }
+  };
+
+  const handleRefreshProducts = async () => {
+    const fresh = await fetchFreshProducts();
+    setProducts(fresh);
+    setCategories(getStoredCategories());
   };
 
   const handleAddCategory = (newCat: string) => {
@@ -564,6 +579,7 @@ export default function App() {
         onAddCategory={handleAddCategory}
         onClearAll={handleClearAll}
         onImportProducts={handleImportProducts}
+        onRefreshProducts={handleRefreshProducts}
       />
 
       {/* Trust & Legal Information Modals */}

@@ -1,26 +1,14 @@
 import { Product } from '../types/product';
 import { INITIAL_PRODUCTS, INITIAL_CATEGORIES } from '../data/initialProducts';
+import { 
+  saveProductToOnlineDb, 
+  deleteProductFromOnlineDb, 
+  fetchOnlineProducts,
+  scanAllLocallyStoredProducts 
+} from './cloudDatabase';
 
-const STORAGE_KEY_PRODUCTS = 'deals_on_point_products_v2';
-const STORAGE_KEY_CATEGORIES = 'deals_on_point_categories_v2';
-const LEGACY_STORAGE_KEYS = [
-  'deals_on_point_products',
-  'deals_on_point_products_v1',
-  'deals_on_point_demo_products'
-];
-
-/**
- * Remove obsolete legacy storage keys that may contain old or demo products
- * from previous iterations, ensuring Netlify and local browsers stay clean.
- */
-export function cleanLegacyStorage(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    LEGACY_STORAGE_KEYS.forEach((k) => localStorage.removeItem(k));
-  } catch (e) {
-    // Ignore storage restrictions
-  }
-}
+export const STORAGE_KEY_PRODUCTS = 'deals_on_point_products_v2';
+export const STORAGE_KEY_CATEGORIES = 'deals_on_point_categories_v2';
 
 /**
  * Generate a clean URL-friendly slug from any string
@@ -99,28 +87,30 @@ export function findCategoryBySlug(categories: string[], query: string): string 
 }
 
 /**
- * Retrieve all products.
- * Merges the bundled production dataset (products.json / INITIAL_PRODUCTS)
- * with any locally saved updates in localStorage.
+ * Retrieve all products synchronously from local cache & bundled initial products.
+ * Never throws, always safe.
  */
 export function getStoredProducts(): Product[] {
-  cleanLegacyStorage();
-
   const fileProducts: Product[] = Array.isArray(INITIAL_PRODUCTS) ? INITIAL_PRODUCTS : [];
   if (typeof window === 'undefined') return fileProducts;
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY_PRODUCTS);
-    if (!raw) {
-      if (fileProducts.length > 0) {
-        localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(fileProducts));
+    let localList: Product[] = [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        localList = parsed;
       }
-      return fileProducts;
     }
 
-    const localList: Product[] = JSON.parse(raw);
-    if (!Array.isArray(localList)) {
-      return fileProducts;
+    // Also scan legacy storage keys safely without deleting them
+    if (localList.length === 0) {
+      const rescued = scanAllLocallyStoredProducts();
+      if (rescued.length > 0) {
+        localList = rescued;
+        localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(localList));
+      }
     }
 
     // Merge: Preserve all local products, and ensure all file-bundled products exist
@@ -142,8 +132,44 @@ export function getStoredProducts(): Product[] {
 }
 
 /**
+ * Asynchronously fetch latest products from the online database.
+ * Updates local cache and returns the synchronized list.
+ */
+export async function fetchFreshProducts(): Promise<Product[]> {
+  const fallback = getStoredProducts();
+  try {
+    const onlineProducts = await fetchOnlineProducts();
+    if (onlineProducts && onlineProducts.length > 0) {
+      // Merge online products with fallback to ensure nothing is lost
+      const onlineIds = new Set(onlineProducts.map((p) => p.id));
+      const onlineSlugs = new Set(onlineProducts.map((p) => p.slug.toLowerCase()));
+      const combined = [...onlineProducts];
+
+      // Keep any local additions not yet in online DB
+      for (const p of fallback) {
+        if (!onlineIds.has(p.id) && !onlineSlugs.has(p.slug.toLowerCase())) {
+          combined.push(p);
+        }
+      }
+
+      // Update local cache
+      try {
+        localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(combined));
+      } catch (e) {
+        // quota
+      }
+
+      return combined;
+    }
+  } catch (err) {
+    console.warn('Could not fetch products from online database:', err);
+  }
+  return fallback;
+}
+
+/**
  * Asynchronously sync current products to disk via Vite dev server
- * so they are committed into src/data/products.json for production builds.
+ * so they are committed into src/data/products.json for production builds if running in dev.
  */
 export async function syncProductsToServer(products: Product[]): Promise<void> {
   if (typeof window === 'undefined') return;
@@ -154,7 +180,7 @@ export async function syncProductsToServer(products: Product[]): Promise<void> {
       body: JSON.stringify(products),
     });
   } catch (e) {
-    // Expected on static hosting like Netlify where no dynamic API exists.
+    // Expected on static hosting like Netlify where no dynamic local node API exists.
   }
 }
 
@@ -177,7 +203,6 @@ export async function syncLocalProductsWithServer(): Promise<void> {
 export function saveProducts(products: Product[]): void {
   try {
     localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(products));
-    // Asynchronously update source of truth on disk when running in development
     syncProductsToServer(products);
   } catch (e) {
     console.error('Failed to save products to localStorage', e);
@@ -207,7 +232,7 @@ export function saveCategories(categories: string[]): void {
   }
 }
 
-export function addProductToStorage(productData: Omit<Product, 'id' | 'slug' | 'createdAt'>): Product {
+export async function addProductToStorage(productData: Omit<Product, 'id' | 'slug' | 'createdAt'>): Promise<Product> {
   const products = getStoredProducts();
   let baseSlug = generateSlug(productData.name);
   if (!baseSlug) baseSlug = 'product';
@@ -231,6 +256,11 @@ export function addProductToStorage(productData: Omit<Product, 'id' | 'slug' | '
   const updated = [newProduct, ...products];
   saveProducts(updated);
 
+  // Asynchronously save to online database (Supabase / Firebase)
+  saveProductToOnlineDb(newProduct).catch((err) => {
+    console.warn('Could not save to online database:', err);
+  });
+
   // Ensure category is in categories list
   if (productData.category) {
     const cats = getStoredCategories();
@@ -242,7 +272,7 @@ export function addProductToStorage(productData: Omit<Product, 'id' | 'slug' | '
   return newProduct;
 }
 
-export function updateProductInStorage(id: string, updates: Partial<Product>): Product | null {
+export async function updateProductInStorage(id: string, updates: Partial<Product>): Promise<Product | null> {
   const products = getStoredProducts();
   const index = products.findIndex((p) => p.id === id);
   if (index === -1) return null;
@@ -254,13 +284,24 @@ export function updateProductInStorage(id: string, updates: Partial<Product>): P
 
   products[index] = updatedProduct;
   saveProducts(products);
+
+  // Asynchronously update in online database
+  saveProductToOnlineDb(updatedProduct).catch((err) => {
+    console.warn('Could not update in online database:', err);
+  });
+
   return updatedProduct;
 }
 
-export function deleteProductFromStorage(id: string): void {
+export async function deleteProductFromStorage(id: string): Promise<void> {
   const products = getStoredProducts();
   const filtered = products.filter((p) => p.id !== id);
   saveProducts(filtered);
+
+  // Asynchronously delete from online database
+  deleteProductFromOnlineDb(id).catch((err) => {
+    console.warn('Could not delete from online database:', err);
+  });
 }
 
 export function clearAllProducts(): void {

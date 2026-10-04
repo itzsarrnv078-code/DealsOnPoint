@@ -5,10 +5,13 @@ export interface Product {
   category: string;
   shortDescription: string;
   keyFeatures: string[];
-  details?: Record<string, string>;
+  details?: Record<string, string | undefined>;
   mainImage: string;
   galleryImages: string[];
   amazonUrl: string;
+  price?: string;
+  originalPrice?: string;
+  discount?: string;
   isNewDeal: boolean;
   isNewArrival: boolean;
   isTrending: boolean;

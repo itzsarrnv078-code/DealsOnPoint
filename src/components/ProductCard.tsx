@@ -89,6 +89,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelectProdu
             {product.name}
           </h3>
 
+          {/* Optional Price Display */}
+          {product.price && (
+            <div className="flex items-baseline gap-2 mb-2 font-sans">
+              <span className="text-[17px] font-bold text-[#F5F7FA]">{product.price}</span>
+              {product.originalPrice && (
+                <span className="text-[13px] text-[#747D8C] line-through font-normal">{product.originalPrice}</span>
+              )}
+              {product.discount && (
+                <span className="text-[10px] font-bold text-[#3B5BDB] bg-[#3B5BDB]/15 px-1.5 py-0.5 rounded">
+                  {product.discount}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Description: Inter 14–15px in Cool Gray */}
           <p className="font-sans text-[#A7AFBF] text-[14px] sm:text-[15px] line-clamp-2 mb-4 leading-relaxed font-normal">
             {product.shortDescription}
