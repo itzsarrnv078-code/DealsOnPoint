@@ -39,18 +39,23 @@ export function findProductBySlugOrId(products: Product[], query: string): Produ
   const queryLower = decoded.toLowerCase();
   const querySlug = generateSlug(decoded);
 
-  // 1. Exact match on slug or ID
+  // 1. Exact match on slug, ID, or originalSlug
   const directMatch = products.find(
-    (p) => p.slug.toLowerCase() === queryLower || p.id.toLowerCase() === queryLower
+    (p) => 
+      p.slug.toLowerCase() === queryLower || 
+      p.id.toLowerCase() === queryLower ||
+      ((p as any).originalSlug && (p as any).originalSlug.toLowerCase() === queryLower)
   );
   if (directMatch) return directMatch;
 
-  // 2. Slugified comparison against product slug or product name
+  // 2. Slugified comparison against product slug, product name, or originalSlug
   const slugMatch = products.find(
     (p) => 
       generateSlug(p.slug) === querySlug || 
       generateSlug(p.name) === querySlug ||
-      p.slug.toLowerCase() === querySlug
+      p.slug.toLowerCase() === querySlug ||
+      ((p as any).originalSlug && generateSlug((p as any).originalSlug) === querySlug) ||
+      ((p as any).originalSlug && (p as any).originalSlug.toLowerCase() === querySlug)
   );
   if (slugMatch) return slugMatch;
 
@@ -87,6 +92,13 @@ export function findCategoryBySlug(categories: string[], query: string): string 
 }
 
 /**
+ * Helper to identify old placeholder items from initial demo boilerplate
+ */
+function isDummyPlaceholderId(id: string): boolean {
+  return /^prod-[1-9]$|^prod-1[0-2]$/.test(id);
+}
+
+/**
  * Retrieve all products synchronously from local cache & bundled initial products.
  * Never throws, always safe.
  */
@@ -100,28 +112,36 @@ export function getStoredProducts(): Product[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        localList = parsed;
+        localList = parsed.filter((p) => !isDummyPlaceholderId(p.id));
       }
     }
 
     // Also scan legacy storage keys safely without deleting them
     if (localList.length === 0) {
-      const rescued = scanAllLocallyStoredProducts();
+      const rescued = scanAllLocallyStoredProducts().filter((p) => !isDummyPlaceholderId(p.id));
       if (rescued.length > 0) {
         localList = rescued;
-        localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(localList));
       }
     }
 
-    // Merge: All 10 bundled products from products.json are guaranteed to be present on all devices,
+    // Merge: All bundled products from products.json are guaranteed to be present on all devices,
     // plus any new custom products added locally by the user.
     const fileIds = new Set(fileProducts.map((p) => p.id));
     const fileSlugs = new Set(fileProducts.map((p) => p.slug.toLowerCase()));
     const merged = [...fileProducts];
 
     for (const lp of localList) {
-      if (!fileIds.has(lp.id) && !fileSlugs.has(lp.slug.toLowerCase())) {
+      if (!isDummyPlaceholderId(lp.id) && !fileIds.has(lp.id) && !fileSlugs.has(lp.slug.toLowerCase())) {
         merged.unshift(lp); // User's custom added deals at top
+      }
+    }
+
+    // Ensure cache is synced if fileProducts has new items
+    if (merged.length !== localList.length) {
+      try {
+        localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(merged));
+      } catch (e) {
+        // quota
       }
     }
 
@@ -193,7 +213,8 @@ export async function syncLocalProductsWithServer(): Promise<void> {
   if (typeof window === 'undefined') return;
   try {
     const products = getStoredProducts();
-    if (products.length > 0) {
+    // Only sync if there are valid products and we are not downgrading the bundled list count
+    if (products.length >= INITIAL_PRODUCTS.length && products.length > 0) {
       await syncProductsToServer(products);
     }
   } catch (e) {

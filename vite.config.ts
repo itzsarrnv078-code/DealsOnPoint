@@ -20,8 +20,14 @@ function productDataApiPlugin(): Plugin {
             try {
               const data = JSON.parse(body);
               if (Array.isArray(data)) {
-                const filePath = path.resolve('.', 'src/data/products.json');
-                fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+                const filePathSrc = path.resolve('.', 'src/data/products.json');
+                const filePathPub = path.resolve('.', 'public/products.json');
+                fs.writeFileSync(filePathSrc, JSON.stringify(data, null, 2), 'utf-8');
+                try {
+                  fs.writeFileSync(filePathPub, JSON.stringify(data, null, 2), 'utf-8');
+                } catch (e) {
+                  // ignore if public does not exist
+                }
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ success: true, count: data.length }));

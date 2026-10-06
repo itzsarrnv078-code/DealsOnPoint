@@ -482,6 +482,9 @@ export function scanAllLocallyStoredProducts(): Product[] {
     // Ignore storage iteration error
   }
 
+  // Helper to filter out dummy placeholder items
+  const isDummyPlaceholder = (id: string) => /^prod-[1-9]$|^prod-1[0-2]$/.test(id);
+
   for (const key of allKeys) {
     try {
       const raw = localStorage.getItem(key);
@@ -495,6 +498,7 @@ export function scanAllLocallyStoredProducts(): Product[] {
             // Check if it looks like a product (has name or title)
             if (item && typeof item === 'object' && (item.name || item.title)) {
               const product = rowToProduct(item);
+              if (isDummyPlaceholder(product.id)) continue;
               // Use slug or id as unique key
               const uniqueKey = product.slug.toLowerCase() || product.id;
               if (!foundProductsMap.has(uniqueKey)) {
@@ -508,6 +512,7 @@ export function scanAllLocallyStoredProducts(): Product[] {
         const item = JSON.parse(raw);
         if (item && typeof item === 'object' && (item.name || item.title)) {
           const product = rowToProduct(item);
+          if (isDummyPlaceholder(product.id)) continue;
           const uniqueKey = product.slug.toLowerCase() || product.id;
           if (!foundProductsMap.has(uniqueKey)) {
             foundProductsMap.set(uniqueKey, product);
