@@ -3,13 +3,16 @@ import productsData from './products.json';
 
 export const INITIAL_CATEGORIES = [
   'Tech & Electronics',
-  'Phone Accessories',
-  'Beauty & Personal Care',
-  'Home & Kitchen',
-  'Fashion & Accessories',
   'Gaming',
-  'Travel & Outdoor',
-  'Daily Essentials'
+  'Phone Accessories',
+  'Automotive',
+  'Home & Kitchen',
+  'Kitchen & Dining',
+  'Home & Garden',
+  'Fashion',
+  'Beauty & Personal Care',
+  'Daily Essentials',
+  'Home Security'
 ];
 
 // Single source of truth for products bundled into the production build.

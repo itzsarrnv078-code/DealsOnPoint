@@ -4,11 +4,15 @@ import {
   Smartphone, 
   Sparkles, 
   Coffee, 
-  Watch, 
   Gamepad2, 
-  Compass, 
   CheckCircle, 
-  FolderOpen 
+  FolderOpen,
+  Car,
+  Utensils,
+  Flower2,
+  Shirt,
+  ShieldCheck,
+  Home
 } from 'lucide-react';
 
 interface CategorySectionProps {
@@ -32,14 +36,21 @@ export const CategorySection: React.FC<CategorySectionProps> = ({
         return <Smartphone className="w-5 h-5" />;
       case 'Beauty & Personal Care':
         return <Sparkles className="w-5 h-5" />;
+      case 'Kitchen & Dining':
+        return <Utensils className="w-5 h-5" />;
       case 'Home & Kitchen':
-        return <Coffee className="w-5 h-5" />;
+        return <Home className="w-5 h-5" />;
+      case 'Home & Garden':
+        return <Flower2 className="w-5 h-5" />;
+      case 'Fashion':
       case 'Fashion & Accessories':
-        return <Watch className="w-5 h-5" />;
+        return <Shirt className="w-5 h-5" />;
+      case 'Automotive':
+        return <Car className="w-5 h-5" />;
       case 'Gaming':
         return <Gamepad2 className="w-5 h-5" />;
-      case 'Travel & Outdoor':
-        return <Compass className="w-5 h-5" />;
+      case 'Home Security':
+        return <ShieldCheck className="w-5 h-5" />;
       case 'Daily Essentials':
         return <CheckCircle className="w-5 h-5" />;
       default:

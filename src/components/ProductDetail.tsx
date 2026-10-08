@@ -257,9 +257,44 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                 {product.category}
               </span>
               {/* Product Name: Poppins Bold */}
-              <h1 className="text-[26px] sm:text-[32px] lg:text-[34px] font-display font-bold text-[#F5F7FA] mt-1.5 leading-[1.2] tracking-tight">
+              <h1 className="text-[24px] sm:text-[30px] lg:text-[34px] font-display font-bold text-[#F5F7FA] mt-1.5 leading-[1.25] tracking-tight">
                 {product.name}
               </h1>
+            </div>
+
+            {/* Mobile-Priority Top CTA (Visible on mobile/tablet right below title, above full descriptions) */}
+            <div className="lg:hidden bg-[#181B24] p-4 rounded-xl border border-[#303541] shadow-lg">
+              {Boolean(product.price?.trim()) && (
+                <div className="flex items-baseline justify-between mb-3 pb-2.5 border-b border-[#303541]/70">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[24px] font-display font-bold text-[#F5F7FA]">
+                      {product.price}
+                    </span>
+                    {Boolean(product.originalPrice?.trim()) && (
+                      <span className="text-[14px] text-[#747D8C] line-through font-normal">
+                        {product.originalPrice}
+                      </span>
+                    )}
+                  </div>
+                  {Boolean(product.discount?.trim()) && (
+                    <span className="text-[11px] font-display font-bold uppercase tracking-wider text-[#3B5BDB] bg-[#3B5BDB]/15 px-2 py-0.5 rounded border border-[#3B5BDB]/30">
+                      {product.discount}
+                    </span>
+                  )}
+                </div>
+              )}
+              <a
+                href={product.amazonUrl || 'https://www.amazon.com'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3.5 px-5 bg-[#3B5BDB] hover:bg-[#7657D5] text-white font-sans font-bold text-[15px] sm:text-[16px] tracking-wide rounded-xl shadow-lg shadow-[#3B5BDB]/25 transition-all duration-200 flex items-center justify-center gap-2 group text-center active:scale-[0.99] cursor-pointer"
+              >
+                <span>GET THIS DEAL ON AMAZON →</span>
+                <ExternalLink className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+              </a>
+              <p className="text-[11.5px] text-[#747D8C] text-center mt-2 font-sans">
+                Opens directly on Amazon in a new tab
+              </p>
             </div>
 
             {/* Short Product Description: Inter 15–17px in Cool Gray */}
@@ -275,14 +310,20 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                   Key Features
                 </h2>
                 <ul className="space-y-2.5 font-sans">
-                  {product.keyFeatures.map((feat, idx) => (
-                    <li key={idx} className="flex items-start gap-2.5 text-[14px] sm:text-[15px] text-[#A7AFBF] leading-normal font-normal">
-                      <span className="w-4 h-4 rounded-full bg-[#3B5BDB]/20 text-[#3B5BDB] border border-[#3B5BDB]/40 flex items-center justify-center shrink-0 mt-0.5">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </span>
-                      <span>{feat}</span>
-                    </li>
-                  ))}
+                  {product.keyFeatures.map((feat, idx) => {
+                    // Normalize bullet point to prevent double bullets like "• - Feature"
+                    const normalized = typeof feat === 'string' 
+                      ? feat.replace(/^[\s\u2022\u25E6\u2023\u2219\u25AA\u25CF\-\–\—\*\+]+/, '').trim()
+                      : feat;
+                    return (
+                      <li key={idx} className="flex items-start gap-2.5 text-[14px] sm:text-[15px] text-[#A7AFBF] leading-normal font-normal">
+                        <span className="w-4 h-4 rounded-full bg-[#3B5BDB]/20 text-[#3B5BDB] border border-[#3B5BDB]/40 flex items-center justify-center shrink-0 mt-0.5">
+                          <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        </span>
+                        <span>{normalized}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
