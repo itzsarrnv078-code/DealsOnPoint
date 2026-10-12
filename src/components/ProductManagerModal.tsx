@@ -47,6 +47,7 @@ interface ProductManagerModalProps {
   onClearAll: () => void;
   onImportProducts?: (importedProducts: Product[]) => void;
   onRefreshProducts?: () => void;
+  initialEditingProduct?: Product | null;
 }
 
 export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
@@ -61,6 +62,7 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
   onClearAll,
   onImportProducts,
   onRefreshProducts,
+  initialEditingProduct,
 }) => {
   const [activeTab, setActiveTab] = useState<'add' | 'list' | 'categories' | 'database'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -124,7 +126,11 @@ export const ProductManagerModal: React.FC<ProductManagerModalProps> = ({
     }
 
     refreshDbAndLocalScan();
-  }, [isOpen]);
+
+    if (initialEditingProduct) {
+      handleEditClick(initialEditingProduct);
+    }
+  }, [isOpen, initialEditingProduct]);
 
   const refreshDbAndLocalScan = async () => {
     setCheckingDb(true);

@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidProduct(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128
+        && data.slug is string && data.slug.size() > 0 && data.slug.size() <= 256
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 300
+        && data.category is string && data.category.size() > 0 && data.category.size() <= 100
+        && data.mainImage is string && data.mainImage.size() > 0 && data.mainImage.size() <= 2048
+        && data.amazonUrl is string && data.amazonUrl.size() > 0 && data.amazonUrl.size() <= 2048;
+    }
+
+    // Public products collection:
+    // Anyone in the world can read product deals (dealsonpoint05.com visitors)
+    // Writing products is allowed for validated product shapes
+    match /products/{productId} {
+      allow get, list: if true;
+      allow create: if isValidId(productId) && isValidProduct(request.resource.data);
+      allow update: if isValidId(productId) && isValidProduct(request.resource.data);
+      allow delete: if isValidId(productId);
+    }
+
+    // System settings & admin credentials
+    match /system_settings/{settingId} {
+      allow read: if true;
+      allow write: if isValidId(settingId);
+    }
+  }
+}

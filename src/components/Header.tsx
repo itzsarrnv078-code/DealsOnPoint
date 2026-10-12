@@ -11,6 +11,8 @@ interface HeaderProps {
   onOpenLegal: (type: LegalModalType) => void;
   onOpenManager: () => void;
   hasProducts: boolean;
+  isAdmin: boolean;
+  onOpenAdminLogin: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,6 +22,8 @@ export const Header: React.FC<HeaderProps> = ({
   onSearchChange,
   onOpenLegal,
   onOpenManager,
+  isAdmin,
+  onOpenAdminLogin,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showSearchInput, setShowSearchInput] = useState(false);
@@ -150,15 +154,26 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
 
-            {/* Owner Add Product Button */}
-            <button
-              onClick={onOpenManager}
-              className="hidden lg:inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[13.5px] font-semibold text-white bg-[#3B5BDB] hover:bg-[#7657D5] rounded-lg transition-colors shadow-sm font-sans cursor-pointer active:scale-[0.98]"
-              title="Add a product with its Amazon affiliate link"
-            >
-              <PlusCircle className="w-3.5 h-3.5 text-white/90" />
-              <span>Add Product</span>
-            </button>
+            {/* Admin Add Product Button - Only visible to authenticated Admins */}
+            {isAdmin ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onOpenManager}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[13.5px] font-semibold text-white bg-[#3B5BDB] hover:bg-[#7657D5] rounded-lg transition-colors shadow-sm font-sans cursor-pointer active:scale-[0.98]"
+                  title="Add a product with its Amazon affiliate link"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-white/90" />
+                  <span className="hidden sm:inline">Add Product</span>
+                </button>
+                <button
+                  onClick={onOpenAdminLogin}
+                  className="px-2.5 py-1.5 text-[12px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/20 transition-colors cursor-pointer"
+                  title="Admin Dashboard & Logout"
+                >
+                  Admin
+                </button>
+              </div>
+            ) : null}
 
             {/* Mobile Hamburger Button */}
             <button
@@ -233,18 +248,29 @@ export const Header: React.FC<HeaderProps> = ({
             About
           </button>
 
-          <div className="pt-3 border-t border-[#303541]">
-            <button
-              onClick={() => {
-                onOpenManager();
-                setMobileMenuOpen(false);
-              }}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-[#3B5BDB] hover:bg-[#7657D5] text-white font-semibold text-[15px] transition-colors shadow-sm font-sans cursor-pointer"
-            >
-              <PlusCircle className="w-4 h-4 text-white/90" />
-              <span>Add Product / Affiliate Link</span>
-            </button>
-          </div>
+          {isAdmin ? (
+            <div className="pt-3 border-t border-[#303541] space-y-2">
+              <button
+                onClick={() => {
+                  onOpenManager();
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-[#3B5BDB] hover:bg-[#7657D5] text-white font-semibold text-[15px] transition-colors shadow-sm font-sans cursor-pointer"
+              >
+                <PlusCircle className="w-4 h-4 text-white/90" />
+                <span>Add Product / Affiliate Link</span>
+              </button>
+              <button
+                onClick={() => {
+                  onOpenAdminLogin();
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-[#181B24] border border-[#303541] text-emerald-400 font-medium text-[14px] transition-colors cursor-pointer"
+              >
+                <span>Admin Dashboard &amp; Logout</span>
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
     </header>

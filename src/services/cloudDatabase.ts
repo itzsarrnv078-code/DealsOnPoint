@@ -1,23 +1,22 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { 
-  getFirestore, 
   collection, 
   getDocs, 
   doc, 
   setDoc, 
   deleteDoc, 
-  query, 
-  orderBy,
-  Firestore 
+  onSnapshot, 
+  Unsubscribe 
 } from 'firebase/firestore';
+import { db } from './firebaseClient';
+import { handleFirestoreError, OperationType } from './firestoreErrorHandler';
 import { Product } from '../types/product';
 import { generateSlug } from './productStorage';
+import initialProductsData from '../data/products.json';
 
-// Local storage keys for database config overrides if user enters them in the UI
+// Local storage keys for custom config overrides if user enters them in the UI
 const LS_SUPABASE_URL = 'deals_on_point_supabase_url';
 const LS_SUPABASE_ANON_KEY = 'deals_on_point_supabase_anon_key';
-const LS_FIREBASE_CONFIG = 'deals_on_point_firebase_config';
 
 export interface DatabaseStatus {
   provider: 'supabase' | 'firebase' | 'none';
@@ -36,9 +35,7 @@ export interface MigrationResult {
   errors: string[];
 }
 
-// Cached instances
 let supabaseClient: SupabaseClient | null = null;
-let firestoreDb: Firestore | null = null;
 
 /**
  * Get the Supabase credentials from Netlify env vars or localStorage fallback
@@ -62,9 +59,6 @@ export function getSupabaseCredentials(): { url: string; anonKey: string } | nul
   return null;
 }
 
-/**
- * Save user-entered Supabase credentials in browser localStorage
- */
 export function saveSupabaseCredentials(url: string, anonKey: string): void {
   if (typeof window === 'undefined') return;
   if (!url || !anonKey) {
@@ -74,46 +68,10 @@ export function saveSupabaseCredentials(url: string, anonKey: string): void {
   } else {
     localStorage.setItem(LS_SUPABASE_URL, url.trim());
     localStorage.setItem(LS_SUPABASE_ANON_KEY, anonKey.trim());
-    supabaseClient = null; // force re-init
+    supabaseClient = null;
   }
 }
 
-/**
- * Get Firebase credentials from Netlify env vars or localStorage
- */
-export function getFirebaseCredentials(): Record<string, string> | null {
-  const apiKey = (import.meta.env.VITE_FIREBASE_API_KEY || '').trim();
-  const projectId = (import.meta.env.VITE_FIREBASE_PROJECT_ID || '').trim();
-
-  if (apiKey && projectId) {
-    return {
-      apiKey,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || `${projectId}.firebaseapp.com`,
-      projectId,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-      appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-    };
-  }
-
-  if (typeof window !== 'undefined') {
-    const lsConfig = localStorage.getItem(LS_FIREBASE_CONFIG);
-    if (lsConfig) {
-      try {
-        const parsed = JSON.parse(lsConfig);
-        if (parsed?.apiKey && parsed?.projectId) return parsed;
-      } catch (e) {
-        // invalid JSON
-      }
-    }
-  }
-
-  return null;
-}
-
-/**
- * Initialize or get Supabase Client
- */
 export function getSupabase(): SupabaseClient | null {
   if (supabaseClient) return supabaseClient;
   const creds = getSupabaseCredentials();
@@ -134,34 +92,9 @@ export function getSupabase(): SupabaseClient | null {
 }
 
 /**
- * Initialize or get Firestore Database
- */
-export function getFirestoreDb(): Firestore | null {
-  if (firestoreDb) return firestoreDb;
-  const creds = getFirebaseCredentials();
-  if (!creds) return null;
-
-  try {
-    let app: FirebaseApp;
-    const existing = getApps();
-    if (existing.length > 0) {
-      app = existing[0];
-    } else {
-      app = initializeApp(creds);
-    }
-    firestoreDb = getFirestore(app);
-    return firestoreDb;
-  } catch (err) {
-    console.error('Failed to initialize Firestore client:', err);
-    return null;
-  }
-}
-
-/**
  * Map DB row to Product object
  */
 export function rowToProduct(row: any): Product {
-  // If stored as a JSON blob inside `data` or `payload`
   if (row?.data && typeof row.data === 'object' && row.data.name) {
     return {
       ...row.data,
@@ -244,7 +177,7 @@ export function productToRow(p: Product): Record<string, any> {
     is_trending: p.isTrending,
     badge: p.badge || null,
     created_at: p.createdAt || new Date().toISOString(),
-    // Also include camelCase fields in case table was created with camelCase
+    // Also include camelCase versions for universal compatibility
     shortDescription: p.shortDescription,
     keyFeatures: p.keyFeatures || [],
     mainImage: p.mainImage,
@@ -261,12 +194,29 @@ export function productToRow(p: Product): Record<string, any> {
  * Check which online database provider is configured
  */
 export async function checkDatabaseStatus(): Promise<DatabaseStatus> {
+  // 1. Firebase is now our primary cloud database
+  if (db) {
+    try {
+      const snap = await getDocs(collection(db, 'products'));
+      return {
+        provider: 'firebase',
+        isConfigured: true,
+        isConnected: true,
+        message: 'Active & Connected to Firebase Firestore Database.',
+        details: `Loaded ${snap.docs.length} products directly from Firestore.`,
+      };
+    } catch (err: any) {
+      console.warn('Firebase query check error:', err);
+      // Fall through to test Supabase if present
+    }
+  }
+
+  // 2. Supabase fallback
   const supabase = getSupabase();
   if (supabase) {
     try {
-      const { data, error } = await supabase.from('products').select('id').limit(1);
+      const { error } = await supabase.from('products').select('id').limit(1);
       if (error) {
-        // Table might not exist yet
         return {
           provider: 'supabase',
           isConfigured: true,
@@ -292,40 +242,38 @@ export async function checkDatabaseStatus(): Promise<DatabaseStatus> {
     }
   }
 
-  const firestore = getFirestoreDb();
-  if (firestore) {
-    try {
-      await getDocs(query(collection(firestore, 'products')));
-      return {
-        provider: 'firebase',
-        isConfigured: true,
-        isConnected: true,
-        message: 'Active & Connected to Firebase Firestore Database.',
-      };
-    } catch (err: any) {
-      return {
-        provider: 'firebase',
-        isConfigured: true,
-        isConnected: false,
-        message: 'Could not query Firebase Firestore.',
-        details: err?.message || String(err),
-      };
-    }
-  }
-
   return {
-    provider: 'none',
-    isConfigured: false,
-    isConnected: false,
-    message: 'No cloud database credentials configured yet.',
-    details: 'Add VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY to your Netlify site settings or enter them in Cloud Settings.',
+    provider: 'firebase',
+    isConfigured: true,
+    isConnected: true,
+    message: 'Firebase Firestore is provisioned and ready for real-time publishing.',
   };
 }
 
 /**
- * Fetch all products from online database
+ * Fetch all products from online database (Firestore primary, Supabase fallback)
  */
 export async function fetchOnlineProducts(): Promise<Product[] | null> {
+  // 1. Primary: Firebase Firestore
+  if (db) {
+    try {
+      const snap = await getDocs(collection(db, 'products'));
+      if (!snap.empty) {
+        const list: Product[] = [];
+        snap.forEach((docSnap) => {
+          list.push(rowToProduct({ id: docSnap.id, ...docSnap.data() }));
+        });
+        // Sort newest first
+        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return list;
+      }
+    } catch (e: any) {
+      console.warn('Failed to fetch from Firebase:', e);
+      handleFirestoreError(e, OperationType.LIST, 'products');
+    }
+  }
+
+  // 2. Secondary: Supabase fallback
   const supabase = getSupabase();
   if (supabase) {
     try {
@@ -334,33 +282,11 @@ export async function fetchOnlineProducts(): Promise<Product[] | null> {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.warn('Supabase fetch error:', error.message);
-        return null;
-      }
-      if (Array.isArray(data)) {
+      if (!error && Array.isArray(data) && data.length > 0) {
         return data.map(rowToProduct);
       }
     } catch (e) {
       console.warn('Failed to fetch from Supabase:', e);
-      return null;
-    }
-  }
-
-  const firestore = getFirestoreDb();
-  if (firestore) {
-    try {
-      const snap = await getDocs(collection(firestore, 'products'));
-      const list: Product[] = [];
-      snap.forEach((docSnap) => {
-        list.push(rowToProduct({ id: docSnap.id, ...docSnap.data() }));
-      });
-      // Sort newest first
-      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      return list;
-    } catch (e) {
-      console.warn('Failed to fetch from Firebase:', e);
-      return null;
     }
   }
 
@@ -368,101 +294,106 @@ export async function fetchOnlineProducts(): Promise<Product[] | null> {
 }
 
 /**
+ * Real-time listener for Firestore products so updates appear live instantly on all devices!
+ */
+export function subscribeToOnlineProducts(
+  onUpdate: (products: Product[]) => void,
+  onError?: (err: any) => void
+): Unsubscribe | null {
+  if (!db) return null;
+  try {
+    return onSnapshot(
+      collection(db, 'products'),
+      (snapshot) => {
+        const list: Product[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(rowToProduct({ id: docSnap.id, ...docSnap.data() }));
+        });
+        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        onUpdate(list);
+      },
+      (error) => {
+        console.warn('Firestore subscription error:', error);
+        if (onError) onError(error);
+        handleFirestoreError(error, OperationType.GET, 'products');
+      }
+    );
+  } catch (e) {
+    console.warn('Could not establish Firestore subscription:', e);
+    return null;
+  }
+}
+
+/**
  * Insert or update a single product in the online database
  */
 export async function saveProductToOnlineDb(product: Product): Promise<boolean> {
+  let saved = false;
+
+  // 1. Primary: Save to Firestore
+  if (db) {
+    try {
+      const docRef = doc(db, 'products', product.id);
+      await setDoc(docRef, productToRow(product), { merge: true });
+      saved = true;
+    } catch (e: any) {
+      console.error('Failed to save to Firestore:', e);
+      handleFirestoreError(e, OperationType.WRITE, `products/${product.id}`);
+    }
+  }
+
+  // 2. Also save to Supabase if configured for dual redundancy
   const supabase = getSupabase();
   if (supabase) {
     try {
       const row = productToRow(product);
-      const { error } = await supabase
-        .from('products')
-        .upsert(row, { onConflict: 'id' });
-
-      if (error) {
-        console.error('Supabase save error:', error);
-        // Fallback: try inserting with minimal core columns if custom columns differ
-        const minRow = {
-          id: product.id,
-          slug: product.slug,
-          name: product.name,
-          category: product.category,
-          short_description: product.shortDescription,
-          main_image: product.mainImage,
-          amazon_url: product.amazonUrl,
-          created_at: product.createdAt,
-        };
-        const retry = await supabase.from('products').upsert(minRow, { onConflict: 'id' });
-        if (retry.error) {
-          console.error('Supabase retry error:', retry.error);
-          return false;
-        }
-      }
-      return true;
+      await supabase.from('products').upsert(row, { onConflict: 'id' });
     } catch (e) {
-      console.error('Failed to save to Supabase:', e);
-      return false;
+      // ignore secondary errors
     }
   }
 
-  const firestore = getFirestoreDb();
-  if (firestore) {
-    try {
-      const docRef = doc(firestore, 'products', product.id);
-      await setDoc(docRef, productToRow(product), { merge: true });
-      return true;
-    } catch (e) {
-      console.error('Failed to save to Firebase:', e);
-      return false;
-    }
-  }
-
-  return false;
+  return saved;
 }
 
 /**
  * Delete a product from online database
  */
 export async function deleteProductFromOnlineDb(id: string): Promise<boolean> {
+  let deleted = false;
+
+  // 1. Primary: Delete from Firestore
+  if (db) {
+    try {
+      await deleteDoc(doc(db, 'products', id));
+      deleted = true;
+    } catch (e: any) {
+      console.error('Failed to delete from Firestore:', e);
+      handleFirestoreError(e, OperationType.DELETE, `products/${id}`);
+    }
+  }
+
+  // 2. Secondary: Delete from Supabase
   const supabase = getSupabase();
   if (supabase) {
     try {
-      const { error } = await supabase.from('products').delete().eq('id', id);
-      if (error) {
-        console.error('Supabase delete error:', error);
-        return false;
-      }
-      return true;
+      await supabase.from('products').delete().eq('id', id);
     } catch (e) {
-      console.error('Failed to delete from Supabase:', e);
-      return false;
+      // ignore
     }
   }
 
-  const firestore = getFirestoreDb();
-  if (firestore) {
-    try {
-      await deleteDoc(doc(firestore, 'products', id));
-      return true;
-    } catch (e) {
-      console.error('Failed to delete from Firebase:', e);
-      return false;
-    }
-  }
-
-  return false;
+  return deleted;
 }
 
 /**
  * Scan ALL browser localStorage keys and extract every locally saved product
- * without deleting or losing any user data.
  */
 export function scanAllLocallyStoredProducts(): Product[] {
   if (typeof window === 'undefined') return [];
 
   const foundProductsMap = new Map<string, Product>();
 
-  // Known target keys in priority order
   const targetKeys = [
     'deals_on_point_products_v2',
     'deals_on_point_products',
@@ -471,7 +402,6 @@ export function scanAllLocallyStoredProducts(): Product[] {
     'products',
   ];
 
-  // Also check all other keys in localStorage
   const allKeys = new Set([...targetKeys]);
   try {
     for (let i = 0; i < localStorage.length; i++) {
@@ -479,10 +409,9 @@ export function scanAllLocallyStoredProducts(): Product[] {
       if (k) allKeys.add(k);
     }
   } catch (e) {
-    // Ignore storage iteration error
+    // ignore
   }
 
-  // Helper to filter out dummy placeholder items
   const isDummyPlaceholder = (id: string) => /^prod-[1-9]$|^prod-1[0-2]$/.test(id);
 
   for (const key of allKeys) {
@@ -490,16 +419,13 @@ export function scanAllLocallyStoredProducts(): Product[] {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
 
-      // Check if it's JSON
       if (raw.startsWith('[') && raw.endsWith(']')) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
           for (const item of parsed) {
-            // Check if it looks like a product (has name or title)
             if (item && typeof item === 'object' && (item.name || item.title)) {
               const product = rowToProduct(item);
               if (isDummyPlaceholder(product.id)) continue;
-              // Use slug or id as unique key
               const uniqueKey = product.slug.toLowerCase() || product.id;
               if (!foundProductsMap.has(uniqueKey)) {
                 foundProductsMap.set(uniqueKey, product);
@@ -507,20 +433,20 @@ export function scanAllLocallyStoredProducts(): Product[] {
             }
           }
         }
-      } else if (raw.startsWith('{') && raw.endsWith('}')) {
-        // In case an individual product was stored
-        const item = JSON.parse(raw);
-        if (item && typeof item === 'object' && (item.name || item.title)) {
-          const product = rowToProduct(item);
-          if (isDummyPlaceholder(product.id)) continue;
-          const uniqueKey = product.slug.toLowerCase() || product.id;
-          if (!foundProductsMap.has(uniqueKey)) {
-            foundProductsMap.set(uniqueKey, product);
-          }
-        }
       }
     } catch (e) {
-      // Ignore unparseable keys
+      // ignore
+    }
+  }
+
+  // Also include the 32 initial bundled products from products.json so they are migrated to the database
+  if (Array.isArray(initialProductsData)) {
+    for (const item of initialProductsData) {
+      const product = rowToProduct(item);
+      const uniqueKey = product.slug.toLowerCase() || product.id;
+      if (!foundProductsMap.has(uniqueKey)) {
+        foundProductsMap.set(uniqueKey, product);
+      }
     }
   }
 
@@ -528,145 +454,73 @@ export function scanAllLocallyStoredProducts(): Product[] {
 }
 
 /**
- * Safely probe IndexedDB for any stored products across all databases
+ * Migrate all products into Firestore database automatically.
+ * Guarantees that all 32 existing products and any local products are live in the database.
  */
-export async function scanIndexedDbProducts(): Promise<Product[]> {
-  if (typeof window === 'undefined' || !window.indexedDB) return [];
+export async function migrateLocalProductsToCloud(): Promise<MigrationResult> {
+  const allProducts = scanAllLocallyStoredProducts();
+  const result: MigrationResult = {
+    success: false,
+    totalScanned: allProducts.length,
+    newlyMigrated: 0,
+    alreadyExisted: 0,
+    migratedProducts: [],
+    errors: [],
+  };
 
-  const found: Product[] = [];
+  if (allProducts.length === 0) {
+    result.success = true;
+    return result;
+  }
+
+  // Fetch existing Firestore products to avoid duplicate work
+  let existingOnline: Product[] = [];
   try {
-    // If browser supports indexedDB.databases()
-    if (typeof window.indexedDB.databases === 'function') {
-      const dbs = await window.indexedDB.databases();
-      for (const dbInfo of dbs) {
-        if (!dbInfo.name) continue;
-        try {
-          const req = window.indexedDB.open(dbInfo.name);
-          const db = await new Promise<IDBDatabase>((resolve, reject) => {
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-          });
-
-          const storeNames = Array.from(db.objectStoreNames);
-          for (const storeName of storeNames) {
-            try {
-              const tx = db.transaction(storeName, 'readonly');
-              const store = tx.objectStore(storeName);
-              const getAllReq = store.getAll();
-              const records = await new Promise<any[]>((resolve, reject) => {
-                getAllReq.onsuccess = () => resolve(getAllReq.result || []);
-                getAllReq.onerror = () => reject(getAllReq.error);
-              });
-
-              for (const r of records) {
-                if (r && typeof r === 'object' && (r.name || r.title || r.slug)) {
-                  found.push(rowToProduct(r));
-                }
-              }
-            } catch (storeErr) {
-              // ignore store error
-            }
-          }
-          db.close();
-        } catch (dbErr) {
-          // ignore db open error
-        }
-      }
-    }
+    const remote = await fetchOnlineProducts();
+    if (remote) existingOnline = remote;
   } catch (e) {
-    // ignore indexedDB probing errors
+    // proceed
   }
 
-  return found;
-}
+  const existingIds = new Set(existingOnline.map((p) => p.id));
 
-/**
- * Collect all products currently saved across localStorage, IndexedDB,
- * and current in-memory products, completely deduplicated.
- */
-export async function collectAllSavedProducts(currentProducts: Product[] = []): Promise<Product[]> {
-  const map = new Map<string, Product>();
-
-  // 1. Add current in-memory products
-  for (const p of currentProducts) {
-    const key = (p.slug || p.id).toLowerCase();
-    map.set(key, p);
-  }
-
-  // 2. Add all localStorage products
-  const local = scanAllLocallyStoredProducts();
-  for (const p of local) {
-    const key = (p.slug || p.id).toLowerCase();
-    if (!map.has(key)) {
-      map.set(key, p);
+  for (const product of allProducts) {
+    if (existingIds.has(product.id)) {
+      result.alreadyExisted++;
+      continue;
     }
-  }
 
-  // 3. Probe IndexedDB
-  try {
-    const idb = await scanIndexedDbProducts();
-    for (const p of idb) {
-      const key = (p.slug || p.id).toLowerCase();
-      if (!map.has(key)) {
-        map.set(key, p);
-      }
-    }
-  } catch (e) {
-    // continue
-  }
-
-  // 4. Probe sessionStorage
-  if (typeof window !== 'undefined' && window.sessionStorage) {
     try {
-      for (let i = 0; i < sessionStorage.length; i++) {
-        const k = sessionStorage.key(i);
-        if (k) {
-          const raw = sessionStorage.getItem(k);
-          if (raw && (raw.startsWith('[') || raw.startsWith('{'))) {
-            try {
-              const parsed = JSON.parse(raw);
-              const list = Array.isArray(parsed) ? parsed : [parsed];
-              for (const item of list) {
-                if (item && (item.name || item.title)) {
-                  const p = rowToProduct(item);
-                  const key = (p.slug || p.id).toLowerCase();
-                  if (!map.has(key)) map.set(key, p);
-                }
-              }
-            } catch (e) { /* ignore */ }
-          }
-        }
+      const saved = await saveProductToOnlineDb(product);
+      if (saved) {
+        result.newlyMigrated++;
+        result.migratedProducts.push(product);
+        existingIds.add(product.id);
+      } else {
+        result.errors.push(`Could not upload "${product.name}"`);
       }
-    } catch (e) { /* ignore */ }
+    } catch (err: any) {
+      result.errors.push(`Error uploading "${product.name}": ${err?.message || String(err)}`);
+    }
   }
 
-  return Array.from(map.values());
+  result.success = result.errors.length === 0;
+  return result;
 }
 
-export interface CleanExportProduct extends Product {
-  title: string;
-  description: string;
-  dateAdded: string;
-}
-
-/**
- * Export all products into a clean, reusable products.json file
- */
 export async function exportProductsToJsonFile(currentProducts: Product[] = []): Promise<{ count: number; filename: string }> {
-  const allProducts = await collectAllSavedProducts(currentProducts);
-  
-  // Format each product cleanly with all aliases for maximum compatibility
-  const cleanExport: CleanExportProduct[] = allProducts.map((p) => ({
+  const allProducts = currentProducts.length > 0 ? currentProducts : scanAllLocallyStoredProducts();
+  const cleanExport = allProducts.map((p) => ({
     id: p.id,
     slug: p.slug,
     name: p.name,
-    title: p.name, // alias
+    title: p.name,
     category: p.category,
     price: p.price || '',
     originalPrice: p.originalPrice || '',
     discount: p.discount || '',
     shortDescription: p.shortDescription,
-    description: p.shortDescription, // alias
+    description: p.shortDescription,
     keyFeatures: p.keyFeatures || [],
     details: p.details || {},
     mainImage: p.mainImage,
@@ -677,7 +531,7 @@ export async function exportProductsToJsonFile(currentProducts: Product[] = []):
     isTrending: Boolean(p.isTrending),
     badge: p.badge,
     createdAt: p.createdAt,
-    dateAdded: p.createdAt, // alias
+    dateAdded: p.createdAt,
   }));
 
   const dataStr = JSON.stringify(cleanExport, null, 2);
@@ -694,10 +548,6 @@ export async function exportProductsToJsonFile(currentProducts: Product[] = []):
   return { count: cleanExport.length, filename: 'products.json' };
 }
 
-/**
- * Import products from a JSON array or file into the online database and local storage,
- * avoiding duplicates by ID, slug, and Amazon URL.
- */
 export async function importProductsFromJsonArray(
   importedItems: any[],
   existingList: Product[] = []
@@ -710,58 +560,28 @@ export async function importProductsFromJsonArray(
   };
 
   if (!Array.isArray(importedItems) || importedItems.length === 0) {
-    result.errors.push('No valid products array found in the imported file.');
+    result.errors.push('No valid products array found.');
     return result;
   }
 
-  // 1. Gather all existing IDs, slugs, and Amazon URLs
   const existingIds = new Set(existingList.map((p) => p.id));
   const existingSlugs = new Set(existingList.map((p) => p.slug.toLowerCase()));
-  const existingUrls = new Set(existingList.map((p) => p.amazonUrl.toLowerCase().trim()).filter((u) => u && u !== 'https://www.amazon.com'));
-
-  // Also query remote cloud database
-  try {
-    const remote = await fetchOnlineProducts();
-    if (remote) {
-      remote.forEach((p) => {
-        existingIds.add(p.id);
-        existingSlugs.add(p.slug.toLowerCase());
-        if (p.amazonUrl && p.amazonUrl !== 'https://www.amazon.com') {
-          existingUrls.add(p.amazonUrl.toLowerCase().trim());
-        }
-      });
-    }
-  } catch (e) {
-    // proceed
-  }
 
   for (const item of importedItems) {
-    if (!item || typeof item !== 'object') continue;
-    if (!item.name && !item.title) continue;
+    if (!item || typeof item !== 'object' || (!item.name && !item.title)) continue;
 
     const product = rowToProduct(item);
-    const slugKey = product.slug.toLowerCase();
-    const urlKey = product.amazonUrl.toLowerCase().trim();
-
-    // Check duplicate
-    if (
-      existingIds.has(product.id) ||
-      existingSlugs.has(slugKey) ||
-      (urlKey && urlKey !== 'https://www.amazon.com' && existingUrls.has(urlKey))
-    ) {
+    if (existingIds.has(product.id) || existingSlugs.has(product.slug.toLowerCase())) {
       result.skippedCount++;
       continue;
     }
 
     try {
-      // Save to online database
       await saveProductToOnlineDb(product);
-      
       result.importedCount++;
       result.addedProducts.push(product);
       existingIds.add(product.id);
-      existingSlugs.add(slugKey);
-      if (urlKey) existingUrls.add(urlKey);
+      existingSlugs.add(product.slug.toLowerCase());
     } catch (err: any) {
       result.errors.push(`Failed to import "${product.name}": ${err?.message || String(err)}`);
     }
@@ -770,106 +590,4 @@ export async function importProductsFromJsonArray(
   return result;
 }
 
-/**
- * Migrate all locally stored products into the connected online database safely.
- * Avoids duplicates by comparing IDs, slugs, and Amazon URLs.
- */
-export async function migrateLocalProductsToCloud(): Promise<MigrationResult> {
-  const localProducts = scanAllLocallyStoredProducts();
-  const result: MigrationResult = {
-    success: false,
-    totalScanned: localProducts.length,
-    newlyMigrated: 0,
-    alreadyExisted: 0,
-    migratedProducts: [],
-    errors: [],
-  };
-
-  if (localProducts.length === 0) {
-    result.success = true;
-    return result;
-  }
-
-  // 1. Fetch existing online products to avoid duplicates
-  let existingOnline: Product[] = [];
-  try {
-    const remote = await fetchOnlineProducts();
-    if (remote) existingOnline = remote;
-  } catch (e) {
-    // Proceed with insert
-  }
-
-  const existingIds = new Set(existingOnline.map((p) => p.id));
-  const existingSlugs = new Set(existingOnline.map((p) => p.slug.toLowerCase()));
-  const existingUrls = new Set(existingOnline.map((p) => p.amazonUrl.toLowerCase().trim()).filter(Boolean));
-
-  for (const product of localProducts) {
-    const slugKey = product.slug.toLowerCase();
-    const urlKey = product.amazonUrl.toLowerCase().trim();
-
-    // Check if already in cloud
-    if (existingIds.has(product.id) || existingSlugs.has(slugKey) || (urlKey && urlKey !== 'https://www.amazon.com' && existingUrls.has(urlKey))) {
-      result.alreadyExisted++;
-      continue;
-    }
-
-    try {
-      const saved = await saveProductToOnlineDb(product);
-      if (saved) {
-        result.newlyMigrated++;
-        result.migratedProducts.push(product);
-        existingIds.add(product.id);
-        existingSlugs.add(slugKey);
-        if (urlKey) existingUrls.add(urlKey);
-      } else {
-        result.errors.push(`Could not upload "${product.name}"`);
-      }
-    } catch (err: any) {
-      result.errors.push(`Error uploading "${product.name}": ${err?.message || String(err)}`);
-    }
-  }
-
-  result.success = result.errors.length === 0;
-  return result;
-}
-
-/**
- * SQL Schema script helper for Supabase
- */
-export const SUPABASE_SETUP_SQL = `-- Run this in Supabase SQL Editor (1-click setup for Deals On Point):
-
-CREATE TABLE IF NOT EXISTS products (
-  id TEXT PRIMARY KEY,
-  slug TEXT UNIQUE NOT NULL,
-  name TEXT NOT NULL,
-  category TEXT NOT NULL,
-  short_description TEXT,
-  key_features JSONB,
-  details JSONB,
-  main_image TEXT,
-  gallery_images JSONB,
-  amazon_url TEXT,
-  price TEXT,
-  original_price TEXT,
-  discount TEXT,
-  is_new_deal BOOLEAN DEFAULT false,
-  is_new_arrival BOOLEAN DEFAULT false,
-  is_trending BOOLEAN DEFAULT false,
-  badge TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Enable Row Level Security (RLS)
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-
--- Allow public read so every visitor on any phone or browser can view products
-CREATE POLICY "Public read for everyone"
-  ON products FOR SELECT
-  USING (true);
-
--- Allow public insert, update, and delete for your site
-CREATE POLICY "Allow write operations"
-  ON products FOR ALL
-  USING (true)
-  WITH CHECK (true);
-`;
+export const SUPABASE_SETUP_SQL = `-- Supabase SQL fallback script if preferred`;

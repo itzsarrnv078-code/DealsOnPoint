@@ -5,9 +5,10 @@ import logoPng from '../assets/images/deals_on_point_logo.png';
 interface FooterProps {
   onNavigate: (section: NavSection) => void;
   onOpenLegal: (type: LegalModalType) => void;
+  onOpenAdminLogin?: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal }) => {
+export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal, onOpenAdminLogin }) => {
   return (
     <footer className="relative bg-[#07080C] text-[#A7AFBF] pt-14 pb-12 font-sans overflow-hidden">
       {/* Subtle Blue/Purple gradient accent line at the top of the footer */}
@@ -146,8 +147,17 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal }) => {
             </p>
           </div>
 
-          <div className="text-[12px] text-[#747D8C] shrink-0">
-            © {new Date().getFullYear()} Deals On Point. All rights reserved.
+          <div className="flex items-center gap-4 text-[12px] text-[#747D8C] shrink-0">
+            <span>© {new Date().getFullYear()} Deals On Point. All rights reserved.</span>
+            {onOpenAdminLogin && (
+              <button
+                onClick={onOpenAdminLogin}
+                className="hover:text-[#A7AFBF] transition-colors cursor-pointer text-[11px] underline underline-offset-2 opacity-60 hover:opacity-100"
+                title="Private Admin Access"
+              >
+                Admin Access
+              </button>
+            )}
           </div>
 
         </div>

@@ -24,8 +24,11 @@ import { CategorySection } from './components/CategorySection';
 import { HowItWorks } from './components/HowItWorks';
 import { EmptyState } from './components/EmptyState';
 import { ProductManagerModal } from './components/ProductManagerModal';
+import { AdminLoginModal } from './components/AdminLoginModal';
 import { TrustModals } from './components/TrustModals';
 import { Footer } from './components/Footer';
+import { isCurrentSessionAdmin } from './services/adminAuth';
+import { subscribeToOnlineProducts, migrateLocalProductsToCloud } from './services/cloudDatabase';
 import { Tag, Clock, Search, X, Info } from 'lucide-react';
 
 export default function App() {
@@ -37,6 +40,9 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isManagerOpen, setIsManagerOpen] = useState(false);
+  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [editingProductForModal, setEditingProductForModal] = useState<Product | null>(null);
   const [activeLegalModal, setActiveLegalModal] = useState<LegalModalType>(null);
 
   // Initialize data and check URL for deep-linked product
@@ -103,11 +109,21 @@ export default function App() {
 
     parseUrlProduct();
 
-    // Asynchronously fetch latest online products from Supabase / Firebase cloud database
-    fetchFreshProducts().then((fresh) => {
-      if (fresh && fresh.length > 0) {
-        setProducts(fresh);
-        parseUrlProduct(fresh);
+    // Check admin authentication state
+    setIsAdmin(isCurrentSessionAdmin());
+    const handleAuthChange = () => {
+      setIsAdmin(isCurrentSessionAdmin());
+    };
+    window.addEventListener('deals_on_point_auth_changed', handleAuthChange);
+
+    // Initial silent migration: ensure all 32 products exist in Firestore
+    migrateLocalProductsToCloud().catch(() => {});
+
+    // Real-time Firestore subscription so any Add/Edit/Delete reflects instantly across all devices
+    const unsubscribeSnapshot = subscribeToOnlineProducts((liveProducts) => {
+      if (liveProducts && liveProducts.length > 0) {
+        setProducts(liveProducts);
+        parseUrlProduct(liveProducts);
       }
     });
 
@@ -117,7 +133,11 @@ export default function App() {
     };
 
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('deals_on_point_auth_changed', handleAuthChange);
+      if (unsubscribeSnapshot) unsubscribeSnapshot();
+    };
   }, []);
 
   // Update browser URL when a product is opened or closed
@@ -302,8 +322,13 @@ export default function App() {
           if (selectedProduct) setSelectedProduct(null);
         }}
         onOpenLegal={(type) => setActiveLegalModal(type)}
-        onOpenManager={() => setIsManagerOpen(true)}
+        onOpenManager={() => {
+          setEditingProductForModal(null);
+          setIsManagerOpen(true);
+        }}
         hasProducts={products.length > 0}
+        isAdmin={isAdmin}
+        onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -314,6 +339,12 @@ export default function App() {
             product={selectedProduct}
             onBack={handleBackToDiscovery}
             onSelectCategory={handleSelectCategory}
+            isAdmin={isAdmin}
+            onEdit={(p) => {
+              setEditingProductForModal(p);
+              setIsManagerOpen(true);
+            }}
+            onDelete={handleDeleteProduct}
           />
         ) : productNotFound ? (
           /* RESILIENT PRODUCT 404 SCREEN */
@@ -399,6 +430,11 @@ export default function App() {
                         key={product.id}
                         product={product}
                         onSelectProduct={handleSelectProduct}
+                        isAdmin={isAdmin}
+                        onEditProduct={(p) => {
+                          setEditingProductForModal(p);
+                          setIsManagerOpen(true);
+                        }}
                       />
                     ))}
                   </div>
@@ -462,6 +498,11 @@ export default function App() {
                             key={product.id}
                             product={product}
                             onSelectProduct={handleSelectProduct}
+                            isAdmin={isAdmin}
+                            onEditProduct={(p) => {
+                              setEditingProductForModal(p);
+                              setIsManagerOpen(true);
+                            }}
                           />
                         ))}
                       </div>
@@ -469,7 +510,7 @@ export default function App() {
                       <EmptyState
                         title="Great deals are coming soon."
                         subtitle="Fresh finds are being added to Deals On Point. Check back soon."
-                        onAddProduct={() => setIsManagerOpen(true)}
+                        onAddProduct={isAdmin ? () => setIsManagerOpen(true) : undefined}
                         actionText="Add Product to Deals"
                       />
                     )}
@@ -510,6 +551,11 @@ export default function App() {
                             key={product.id}
                             product={product}
                             onSelectProduct={handleSelectProduct}
+                            isAdmin={isAdmin}
+                            onEditProduct={(p) => {
+                              setEditingProductForModal(p);
+                              setIsManagerOpen(true);
+                            }}
                           />
                         ))}
                       </div>
@@ -517,7 +563,7 @@ export default function App() {
                       <EmptyState
                         title="Fresh finds are on their way."
                         subtitle="We’re getting Deals On Point ready with products worth discovering. Check back soon."
-                        onAddProduct={() => setIsManagerOpen(true)}
+                        onAddProduct={isAdmin ? () => setIsManagerOpen(true) : undefined}
                         actionText="Add Product to New Arrivals"
                       />
                     )}
@@ -565,12 +611,16 @@ export default function App() {
       <Footer
         onNavigate={handleNavigate}
         onOpenLegal={(type) => setActiveLegalModal(type)}
+        onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
       />
 
-      {/* Product Manager Modal (For adding products manually with Amazon affiliate links) */}
+      {/* Product Manager Modal (For adding products manually with Amazon affiliate links) - Authenticated Admin Only */}
       <ProductManagerModal
-        isOpen={isManagerOpen}
-        onClose={() => setIsManagerOpen(false)}
+        isOpen={isManagerOpen && isAdmin}
+        onClose={() => {
+          setIsManagerOpen(false);
+          setEditingProductForModal(null);
+        }}
         products={products}
         categories={categories}
         onAddProduct={handleAddProduct}
@@ -580,6 +630,25 @@ export default function App() {
         onClearAll={handleClearAll}
         onImportProducts={handleImportProducts}
         onRefreshProducts={handleRefreshProducts}
+        initialEditingProduct={editingProductForModal}
+      />
+
+      {/* Admin Login Modal (Secure salted SHA-256 server-side authentication) */}
+      <AdminLoginModal
+        isOpen={isAdminLoginOpen}
+        onClose={() => setIsAdminLoginOpen(false)}
+        isAdmin={isAdmin}
+        onLoginSuccess={() => {
+          setIsAdmin(true);
+        }}
+        onLogoutSuccess={() => {
+          setIsAdmin(false);
+          setIsManagerOpen(false);
+        }}
+        onOpenProductManager={() => {
+          setEditingProductForModal(null);
+          setIsManagerOpen(true);
+        }}
       />
 
       {/* Trust & Legal Information Modals */}

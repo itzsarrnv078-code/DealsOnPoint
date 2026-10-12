@@ -18,12 +18,18 @@ interface ProductDetailProps {
   product: Product;
   onBack: () => void;
   onSelectCategory?: (category: string) => void;
+  isAdmin?: boolean;
+  onEdit?: (product: Product) => void;
+  onDelete?: (id: string) => void;
 }
 
 export const ProductDetail: React.FC<ProductDetailProps> = ({
   product,
   onBack,
   onSelectCategory,
+  isAdmin = false,
+  onEdit,
+  onDelete,
 }) => {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -101,20 +107,47 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
             <span>Back to Deals On Point</span>
           </button>
 
-          {/* Clean Unboxed Breadcrumb */}
-          <div className="flex items-center gap-2 text-[13px] sm:text-[14px] text-[#747D8C] font-sans">
-            <button onClick={onBack} className="hover:text-[#F5F7FA] transition-colors cursor-pointer">
-              Home
-            </button>
-            <span aria-hidden="true" className="text-[#303541]">/</span>
-            <button 
-              onClick={() => onSelectCategory && onSelectCategory(product.category)}
-              className="hover:text-[#3B5BDB] font-medium text-[#A7AFBF] transition-colors cursor-pointer"
-            >
-              {product.category}
-            </button>
-            <span aria-hidden="true" className="text-[#303541]">/</span>
-            <span className="text-[#F5F7FA] truncate max-w-[160px] sm:max-w-xs">{product.name}</span>
+          {/* Clean Unboxed Breadcrumb & Admin Actions */}
+          <div className="flex items-center gap-3">
+            {isAdmin && (
+              <div className="flex items-center gap-2 mr-2">
+                {onEdit && (
+                  <button
+                    onClick={() => onEdit(product)}
+                    className="px-3 py-1.5 rounded-lg bg-[#303541] hover:bg-[#3B5BDB] text-white text-[12.5px] font-medium transition-colors cursor-pointer"
+                  >
+                    Edit Deal
+                  </button>
+                )}
+                {onDelete && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Are you sure you want to delete "${product.name}"? This will remove it from the live database.`)) {
+                        onDelete(product.id);
+                        onBack();
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-[12.5px] font-medium transition-colors cursor-pointer"
+                  >
+                    Delete Deal
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="hidden sm:flex items-center gap-2 text-[13px] sm:text-[14px] text-[#747D8C] font-sans">
+              <button onClick={onBack} className="hover:text-[#F5F7FA] transition-colors cursor-pointer">
+                Home
+              </button>
+              <span aria-hidden="true" className="text-[#303541]">/</span>
+              <button 
+                onClick={() => onSelectCategory && onSelectCategory(product.category)}
+                className="hover:text-[#3B5BDB] font-medium text-[#A7AFBF] transition-colors cursor-pointer"
+              >
+                {product.category}
+              </button>
+              <span aria-hidden="true" className="text-[#303541]">/</span>
+              <span className="text-[#F5F7FA] truncate max-w-[160px] sm:max-w-xs">{product.name}</span>
+            </div>
           </div>
         </div>
 

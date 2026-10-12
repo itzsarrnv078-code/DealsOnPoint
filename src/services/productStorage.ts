@@ -278,10 +278,8 @@ export async function addProductToStorage(productData: Omit<Product, 'id' | 'slu
   const updated = [newProduct, ...products];
   saveProducts(updated);
 
-  // Asynchronously save to online database (Supabase / Firebase)
-  saveProductToOnlineDb(newProduct).catch((err) => {
-    console.warn('Could not save to online database:', err);
-  });
+  // Persist directly to online Firestore database and local cache
+  await saveProductToOnlineDb(newProduct);
 
   // Ensure category is in categories list
   if (productData.category) {
@@ -307,10 +305,8 @@ export async function updateProductInStorage(id: string, updates: Partial<Produc
   products[index] = updatedProduct;
   saveProducts(products);
 
-  // Asynchronously update in online database
-  saveProductToOnlineDb(updatedProduct).catch((err) => {
-    console.warn('Could not update in online database:', err);
-  });
+  // Synchronously update in online database
+  await saveProductToOnlineDb(updatedProduct);
 
   return updatedProduct;
 }
@@ -320,10 +316,8 @@ export async function deleteProductFromStorage(id: string): Promise<void> {
   const filtered = products.filter((p) => p.id !== id);
   saveProducts(filtered);
 
-  // Asynchronously delete from online database
-  deleteProductFromOnlineDb(id).catch((err) => {
-    console.warn('Could not delete from online database:', err);
-  });
+  // Synchronously delete from online database
+  await deleteProductFromOnlineDb(id);
 }
 
 export function clearAllProducts(): void {

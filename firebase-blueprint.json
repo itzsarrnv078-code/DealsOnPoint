@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Affiliate product deal with pricing, description, category, and Amazon affiliate link",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique product identifier" },
+        "slug": { "type": "string", "description": "URL-safe unique product slug" },
+        "name": { "type": "string", "description": "Product title / name" },
+        "category": { "type": "string", "description": "Product category" },
+        "shortDescription": { "type": "string", "description": "Product description" },
+        "keyFeatures": { "type": "array", "description": "List of key feature bullets" },
+        "details": { "type": "object", "description": "Technical key-value details" },
+        "mainImage": { "type": "string", "description": "Primary product image URL" },
+        "galleryImages": { "type": "array", "description": "Gallery images list" },
+        "amazonUrl": { "type": "string", "description": "Amazon affiliate link" },
+        "price": { "type": "string", "description": "Current deal price" },
+        "originalPrice": { "type": "string", "description": "Original retail price" },
+        "discount": { "type": "string", "description": "Discount tag or percentage" },
+        "isNewDeal": { "type": "boolean", "description": "Flag for new deal section" },
+        "isNewArrival": { "type": "boolean", "description": "Flag for new arrival section" },
+        "isTrending": { "type": "boolean", "description": "Flag for trending section" },
+        "badge": { "type": "string", "description": "Badge label (NEW DEAL, NEW, TRENDING)" },
+        "createdAt": { "type": "string", "description": "Creation timestamp ISO string" }
+      },
+      "required": ["id", "slug", "name", "category", "mainImage", "amazonUrl"]
+    },
+    "AdminConfig": {
+      "title": "AdminConfig",
+      "description": "Secure admin credential hash and configuration",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "Admin username (DealsonPoint05)" },
+        "passwordHash": { "type": "string", "description": "Salted SHA-256 password hash" },
+        "salt": { "type": "string", "description": "Cryptographic salt" },
+        "updatedAt": { "type": "string", "description": "Last update ISO timestamp" }
+      },
+      "required": ["username", "passwordHash", "salt"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Collection of all public product deals visible to all visitors"
+    },
+    "/system_settings/{settingId}": {
+      "schema": "AdminConfig",
+      "description": "Admin configuration and password hash"
+    }
+  }
+}

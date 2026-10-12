@@ -1,13 +1,20 @@
 import React, { useState } from 'react';
 import { Product } from '../types/product';
-import { ArrowRight, Tag, Sparkles } from 'lucide-react';
+import { ArrowRight, Tag, Sparkles, Edit3 } from 'lucide-react';
 
 interface ProductCardProps {
   product: Product;
   onSelectProduct: (product: Product) => void;
+  isAdmin?: boolean;
+  onEditProduct?: (product: Product) => void;
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelectProduct }) => {
+export const ProductCard: React.FC<ProductCardProps> = ({ 
+  product, 
+  onSelectProduct,
+  isAdmin = false,
+  onEditProduct
+}) => {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
 
@@ -110,9 +117,25 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelectProdu
           </p>
         </div>
 
-        {/* Action Button: “View Deal” in Deep Blue */}
+        {/* Action Button: “View Deal” in Deep Blue & Admin Edit Button */}
         <div className="pt-3.5 border-t border-[#303541]/70 flex items-center justify-between mt-auto">
-          <span className="text-[12px] font-sans text-[#747D8C] font-medium">Deals On Point</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] font-sans text-[#747D8C] font-medium">Deals On Point</span>
+            {isAdmin && onEditProduct && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditProduct(product);
+                }}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#303541]/80 hover:bg-[#303541] text-[#A7AFBF] hover:text-white text-[11px] font-medium transition-colors cursor-pointer"
+                title="Edit Product"
+              >
+                <Edit3 className="w-3 h-3 text-[#3B5BDB]" />
+                <span>Edit</span>
+              </button>
+            )}
+          </div>
           
           <button
             type="button"
