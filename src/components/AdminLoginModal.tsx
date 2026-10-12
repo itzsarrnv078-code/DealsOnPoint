@@ -16,7 +16,7 @@ import {
 import { 
   ADMIN_USERNAME, 
   verifyAdminLogin, 
-  initializeAdminPassword, 
+  changeAdminPassword, 
   getAdminConfigStatus,
   adminLogout 
 } from '../services/adminAuth';
@@ -70,7 +70,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     setErrorMsg('');
     setSuccessMsg('');
 
-    if (usernameInput.trim() !== ADMIN_USERNAME) {
+    if (usernameInput.trim().toLowerCase() !== ADMIN_USERNAME.toLowerCase()) {
       setErrorMsg(`Admin username must be exactly "${ADMIN_USERNAME}".`);
       return;
     }
@@ -82,42 +82,15 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
 
     setLoading(true);
     try {
-      if (isFirstTimeSetup) {
-        if (passwordInput.length < 6) {
-          setErrorMsg('Password must be at least 6 characters long.');
-          setLoading(false);
-          return;
-        }
-        if (passwordInput !== confirmPasswordInput) {
-          setErrorMsg('Passwords do not match. Please re-enter.');
-          setLoading(false);
-          return;
-        }
-
-        const res = await initializeAdminPassword(passwordInput);
-        if (res.success) {
-          setSuccessMsg('Admin password securely saved! You are now logged in.');
-          setTimeout(() => {
-            onLoginSuccess();
-            onClose();
-          }, 1200);
-        } else {
-          setErrorMsg(res.error || 'Failed to save admin password.');
-        }
+      const res = await verifyAdminLogin(passwordInput);
+      if (res.success) {
+        setSuccessMsg('Authenticated successfully. Welcome, Admin!');
+        setTimeout(() => {
+          onLoginSuccess();
+          onClose();
+        }, 800);
       } else {
-        const res = await verifyAdminLogin(passwordInput);
-        if (res.success) {
-          setSuccessMsg('Authenticated successfully. Welcome, Admin!');
-          setTimeout(() => {
-            onLoginSuccess();
-            onClose();
-          }, 1000);
-        } else if (res.error === 'NEEDS_SETUP') {
-          setIsFirstTimeSetup(true);
-          setErrorMsg('No password configured yet. Please set your private admin password below.');
-        } else {
-          setErrorMsg(res.error || 'Invalid credentials.');
-        }
+        setErrorMsg(res.error || 'Invalid credentials.');
       }
     } catch (err: any) {
       setErrorMsg(err?.message || 'Login request failed.');

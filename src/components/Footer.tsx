@@ -152,10 +152,10 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal, onOpenA
             {onOpenAdminLogin && (
               <button
                 onClick={onOpenAdminLogin}
-                className="hover:text-[#A7AFBF] transition-colors cursor-pointer text-[11px] underline underline-offset-2 opacity-60 hover:opacity-100"
-                title="Private Admin Access"
+                className="hover:text-[#A7AFBF] transition-colors cursor-pointer text-[11px] underline underline-offset-2 opacity-70 hover:opacity-100"
+                title="Admin Login"
               >
-                Admin Access
+                Admin Login
               </button>
             )}
           </div>

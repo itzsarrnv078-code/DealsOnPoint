@@ -27,6 +27,7 @@ import { ProductManagerModal } from './components/ProductManagerModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { TrustModals } from './components/TrustModals';
 import { Footer } from './components/Footer';
+import { AdminLoginPage } from './components/AdminLoginPage';
 import { isCurrentSessionAdmin } from './services/adminAuth';
 import { subscribeToOnlineProducts, migrateLocalProductsToCloud } from './services/cloudDatabase';
 import { Tag, Clock, Search, X, Info } from 'lucide-react';
@@ -44,6 +45,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [editingProductForModal, setEditingProductForModal] = useState<Product | null>(null);
   const [activeLegalModal, setActiveLegalModal] = useState<LegalModalType>(null);
+  const [currentPath, setCurrentPath] = useState(typeof window !== 'undefined' ? window.location.pathname : '/');
 
   // Initialize data and check URL for deep-linked product
   useEffect(() => {
@@ -55,9 +57,32 @@ export default function App() {
     // Sync any existing browser localStorage products to server disk
     syncLocalProductsWithServer();
 
-    // Parse URL on load for /product/:slug, /products/:slug, /category/:slug, ?product=:slug, ?category=:slug
+    // Parse URL on load for /admin/login, /admin/dashboard, /product/:slug, /products/:slug, /category/:slug, ?product=:slug, ?category=:slug
     const parseUrlProduct = (overrideProducts?: Product[]) => {
       const path = window.location.pathname;
+      setCurrentPath(path);
+
+      if (path === '/admin/login' || path.startsWith('/admin/login')) {
+        setSelectedProduct(null);
+        setProductNotFound(false);
+        return;
+      }
+
+      if (path === '/admin/dashboard' || path.startsWith('/admin/dashboard')) {
+        setSelectedProduct(null);
+        setProductNotFound(false);
+        if (isCurrentSessionAdmin()) {
+          setIsManagerOpen(true);
+        } else {
+          // Redirect to login if not authenticated
+          try {
+            window.history.replaceState({}, '', '/admin/login');
+            setCurrentPath('/admin/login');
+          } catch (e) {}
+        }
+        return;
+      }
+
       const searchParams = new URLSearchParams(window.location.search);
       let targetProductSlug = searchParams.get('product') || searchParams.get('p') || searchParams.get('id');
       let targetCategorySlug = searchParams.get('category') || searchParams.get('cat');
@@ -112,7 +137,15 @@ export default function App() {
     // Check admin authentication state
     setIsAdmin(isCurrentSessionAdmin());
     const handleAuthChange = () => {
-      setIsAdmin(isCurrentSessionAdmin());
+      const adminState = isCurrentSessionAdmin();
+      setIsAdmin(adminState);
+      if (adminState && window.location.pathname === '/admin/login') {
+        try {
+          window.history.pushState({}, '', '/admin/dashboard');
+          setCurrentPath('/admin/dashboard');
+          setIsManagerOpen(true);
+        } catch (e) {}
+      }
     };
     window.addEventListener('deals_on_point_auth_changed', handleAuthChange);
 
@@ -129,6 +162,7 @@ export default function App() {
 
     // Listen to browser popstate (back/forward)
     const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
       parseUrlProduct();
     };
 
@@ -333,7 +367,25 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-grow">
-        {selectedProduct ? (
+        {currentPath === '/admin/login' || currentPath === '/admin/login/' ? (
+          /* DEDICATED ADMIN LOGIN PAGE (/admin/login) */
+          <AdminLoginPage
+            onLoginSuccess={() => {
+              setIsAdmin(true);
+              setIsManagerOpen(true);
+              try {
+                window.history.pushState({}, '', '/admin/dashboard');
+                setCurrentPath('/admin/dashboard');
+              } catch (e) {}
+            }}
+            onNavigateHome={() => {
+              try {
+                window.history.pushState({}, '', '/');
+                setCurrentPath('/');
+              } catch (e) {}
+            }}
+          />
+        ) : selectedProduct ? (
           /* PRODUCT DETAIL DEDICATED VIEW (dealsonpoint.com/products/product-name) */
           <ProductDetail
             product={selectedProduct}
@@ -611,7 +663,14 @@ export default function App() {
       <Footer
         onNavigate={handleNavigate}
         onOpenLegal={(type) => setActiveLegalModal(type)}
-        onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
+        onOpenAdminLogin={() => {
+          try {
+            window.history.pushState({}, '', '/admin/login');
+            setCurrentPath('/admin/login');
+          } catch (e) {
+            setIsAdminLoginOpen(true);
+          }
+        }}
       />
 
       {/* Product Manager Modal (For adding products manually with Amazon affiliate links) - Authenticated Admin Only */}
@@ -620,6 +679,12 @@ export default function App() {
         onClose={() => {
           setIsManagerOpen(false);
           setEditingProductForModal(null);
+          if (currentPath === '/admin/dashboard') {
+            try {
+              window.history.pushState({}, '', '/');
+              setCurrentPath('/');
+            } catch (e) {}
+          }
         }}
         products={products}
         categories={categories}
@@ -640,14 +705,26 @@ export default function App() {
         isAdmin={isAdmin}
         onLoginSuccess={() => {
           setIsAdmin(true);
+          try {
+            window.history.pushState({}, '', '/admin/dashboard');
+            setCurrentPath('/admin/dashboard');
+          } catch (e) {}
         }}
         onLogoutSuccess={() => {
           setIsAdmin(false);
           setIsManagerOpen(false);
+          try {
+            window.history.pushState({}, '', '/');
+            setCurrentPath('/');
+          } catch (e) {}
         }}
         onOpenProductManager={() => {
           setEditingProductForModal(null);
           setIsManagerOpen(true);
+          try {
+            window.history.pushState({}, '', '/admin/dashboard');
+            setCurrentPath('/admin/dashboard');
+          } catch (e) {}
         }}
       />
 

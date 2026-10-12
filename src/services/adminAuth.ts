@@ -1,9 +1,15 @@
 import { db } from './firebaseClient';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-export const ADMIN_USERNAME = 'DealsonPoint05';
+export const ADMIN_USERNAME = 'Dealsonpoint05';
 const ADMIN_CONFIG_DOC = 'admin_credential';
 const ADMIN_SESSION_KEY = 'deals_on_point_admin_auth_v1';
+
+// Initial pre-configured salted hash for Arjunroop1$
+// Salt: 'd9a4b2c1e8f7a6b5'
+// Resulting SHA-256: 'da8bd54b3a34655f28954058511faf64bd0605452f17295ac7ef7a4958f4f6e0'
+const DEFAULT_INITIAL_SALT = 'd9a4b2c1e8f7a6b5';
+const DEFAULT_INITIAL_HASH = 'da8bd54b3a34655f28954058511faf64bd0605452f17295ac7ef7a4958f4f6e0';
 
 // Cryptographic hash helper using Web Crypto API (SHA-256)
 async function hashPasswordWithSalt(password: string, salt: string): Promise<string> {
@@ -25,82 +31,80 @@ export interface AdminCredentialDoc {
   passwordHash: string;
   salt: string;
   isConfigured: boolean;
+  mustChangePassword?: boolean;
   updatedAt: string;
 }
 
 /**
- * Checks if the Admin account has already had a private password initialized in the cloud database.
+ * Ensures the admin credentials exist in Firestore.
+ * If not present, provisions the initial salted hash for `Arjunroop1$` with `mustChangePassword: true`.
  */
-export async function getAdminConfigStatus(): Promise<{ isConfigured: boolean }> {
+export async function ensureAdminCredentialSeeded(): Promise<AdminCredentialDoc> {
   try {
     const ref = doc(db, 'system_settings', ADMIN_CONFIG_DOC);
     const snap = await getDoc(ref);
-    if (snap.exists()) {
-      const data = snap.data() as AdminCredentialDoc;
-      return { isConfigured: Boolean(data?.isConfigured && data?.passwordHash) };
+    if (snap.exists() && snap.data()?.passwordHash) {
+      return snap.data() as AdminCredentialDoc;
     }
-    return { isConfigured: false };
-  } catch (e) {
-    console.warn('Could not read admin credential status:', e);
-    // If not reachable yet, check session
-    return { isConfigured: true };
+
+    const initialDoc: AdminCredentialDoc = {
+      username: ADMIN_USERNAME,
+      passwordHash: DEFAULT_INITIAL_HASH,
+      salt: DEFAULT_INITIAL_SALT,
+      isConfigured: true,
+      mustChangePassword: true,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await setDoc(ref, initialDoc, { merge: true });
+    return initialDoc;
+  } catch (err) {
+    console.warn('Could not seed admin credentials to Firestore:', err);
+    return {
+      username: ADMIN_USERNAME,
+      passwordHash: DEFAULT_INITIAL_HASH,
+      salt: DEFAULT_INITIAL_SALT,
+      isConfigured: true,
+      mustChangePassword: true,
+      updatedAt: new Date().toISOString(),
+    };
   }
 }
 
 /**
- * Initial setup: Admin sets their private password for the first time.
- * Stores ONLY the cryptographic salted hash in the database.
+ * Checks if the Admin account has been configured.
  */
-export async function initializeAdminPassword(password: string): Promise<{ success: boolean; error?: string }> {
-  if (!password || password.length < 6) {
-    return { success: false, error: 'Password must be at least 6 characters.' };
-  }
-
+export async function getAdminConfigStatus(): Promise<{ isConfigured: boolean; mustChangePassword: boolean }> {
   try {
-    const salt = generateRandomSalt();
-    const hash = await hashPasswordWithSalt(password, salt);
-    const ref = doc(db, 'system_settings', ADMIN_CONFIG_DOC);
-
-    await setDoc(ref, {
-      username: ADMIN_USERNAME,
-      passwordHash: hash,
-      salt: salt,
-      isConfigured: true,
-      updatedAt: new Date().toISOString(),
-    });
-
-    // Automatically log in
-    markAdminAuthenticated();
-    return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'Failed to initialize admin credentials' };
+    const cred = await ensureAdminCredentialSeeded();
+    return { 
+      isConfigured: true, 
+      mustChangePassword: Boolean(cred.mustChangePassword) 
+    };
+  } catch (e) {
+    return { isConfigured: true, mustChangePassword: false };
   }
 }
 
 /**
  * Authenticates admin against the server-side salted SHA-256 hash.
- * If credentials are not yet configured in DB, allows user to configure them.
  */
-export async function verifyAdminLogin(password: string): Promise<{ success: boolean; error?: string }> {
+export async function verifyAdminLogin(password: string): Promise<{ success: boolean; mustChangePassword?: boolean; error?: string }> {
   if (!password) {
     return { success: false, error: 'Password is required' };
   }
 
   try {
-    const ref = doc(db, 'system_settings', ADMIN_CONFIG_DOC);
-    const snap = await getDoc(ref);
+    const credDoc = await ensureAdminCredentialSeeded();
+    const computedHash = await hashPasswordWithSalt(password, credDoc.salt);
 
-    if (!snap.exists() || !snap.data()?.passwordHash) {
-      // First time initialization
-      return { success: false, error: 'NEEDS_SETUP' };
-    }
-
-    const docData = snap.data() as AdminCredentialDoc;
-    const computedHash = await hashPasswordWithSalt(password, docData.salt);
-
-    if (computedHash === docData.passwordHash) {
+    // Case-insensitive username check helper
+    if (computedHash === credDoc.passwordHash) {
       markAdminAuthenticated();
-      return { success: true };
+      return { 
+        success: true, 
+        mustChangePassword: Boolean(credDoc.mustChangePassword) 
+      };
     }
 
     return { success: false, error: 'Invalid password. Please check and try again.' };
@@ -110,14 +114,33 @@ export async function verifyAdminLogin(password: string): Promise<{ success: boo
 }
 
 /**
- * Changes admin password (requires old password verification first)
+ * Sets new password and clears the `mustChangePassword` flag.
  */
-export async function updateAdminPassword(oldPass: string, newPass: string): Promise<{ success: boolean; error?: string }> {
-  const verify = await verifyAdminLogin(oldPass);
-  if (!verify.success) {
-    return { success: false, error: 'Current password is incorrect' };
+export async function changeAdminPassword(newPassword: string): Promise<{ success: boolean; error?: string }> {
+  if (!newPassword || newPassword.length < 6) {
+    return { success: false, error: 'New password must be at least 6 characters long.' };
   }
-  return initializeAdminPassword(newPass);
+
+  try {
+    const salt = generateRandomSalt();
+    const hash = await hashPasswordWithSalt(newPassword, salt);
+    const ref = doc(db, 'system_settings', ADMIN_CONFIG_DOC);
+
+    const updatedDoc: AdminCredentialDoc = {
+      username: ADMIN_USERNAME,
+      passwordHash: hash,
+      salt: salt,
+      isConfigured: true,
+      mustChangePassword: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await setDoc(ref, updatedDoc, { merge: true });
+    markAdminAuthenticated();
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to update admin password' };
+  }
 }
 
 /**
@@ -129,8 +152,7 @@ export function isCurrentSessionAdmin(): boolean {
     const token = sessionStorage.getItem(ADMIN_SESSION_KEY);
     if (!token) return false;
     const parsed = JSON.parse(token);
-    // 24 hour session expiration
-    if (parsed?.authenticated && parsed?.username === ADMIN_USERNAME) {
+    if (parsed?.authenticated && parsed?.username?.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
       const now = Date.now();
       if (now - (parsed.timestamp || 0) < 24 * 60 * 60 * 1000) {
         return true;
