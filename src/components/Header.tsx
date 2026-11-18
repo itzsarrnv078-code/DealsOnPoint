@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Menu, X, PlusCircle } from 'lucide-react';
 import { NavSection, LegalModalType } from '../types/product';
-import logoPng from '../assets/images/deals_on_point_logo.png';
 
 interface HeaderProps {
   activeSection: NavSection;
@@ -45,19 +44,19 @@ export const Header: React.FC<HeaderProps> = ({
               className="text-left group flex items-center gap-2.5 sm:gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3B5BDB] rounded-md cursor-pointer"
             >
               <img
-                src={logoPng}
-                alt="Deals On Point Logo"
-                className="h-10 sm:h-12 w-auto object-contain drop-shadow-sm transition-transform group-hover:scale-105"
+                src="/assets/aistudio/Glossy_Deals_On_Point_Shopping_Logo_75f7c2fe.png"
+                alt="Deals on Point Logo"
+                className="h-11 w-11 sm:h-13 sm:w-13 rounded-full object-contain bg-black drop-shadow-sm transition-transform group-hover:scale-105 shrink-0"
               />
               <div className="flex flex-col">
-                <span className="text-[18px] sm:text-[21px] font-display font-extrabold tracking-[0.05em] uppercase leading-none">
-                  <span className="text-[#F5F7FA] group-hover:text-white transition-colors">DEALS </span>
+                <span className="text-[18px] sm:text-[21px] font-display font-extrabold tracking-[0.04em] leading-none">
+                  <span className="text-[#F5F7FA] group-hover:text-white transition-colors">Deals </span>
                   <span className="bg-gradient-to-r from-[#3B5BDB] to-[#7657D5] bg-clip-text text-transparent">
-                    ON POINT
+                    on Point
                   </span>
                 </span>
                 <span className="text-[10px] sm:text-[11px] font-sans font-medium text-[#A7AFBF] tracking-wider uppercase mt-1 leading-none">
-                  Smart Finds. Deals On Point.
+                  Smart Finds. Deals on Point.
                 </span>
               </div>
             </button>

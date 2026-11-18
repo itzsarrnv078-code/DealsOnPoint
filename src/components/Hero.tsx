@@ -30,7 +30,7 @@ export const Hero: React.FC<HeroProps> = ({ onExploreDeals, onBrowseCategories }
           <span className="text-[#F5F7FA] block sm:inline">Smart Finds.</span>
           <br className="hidden sm:inline" />{' '}
           <span className="bg-gradient-to-r from-[#3B5BDB] via-[#5B55E5] to-[#7657D5] bg-clip-text text-transparent">
-            Deals On Point.
+            Deals on Point.
           </span>
         </h1>
 
@@ -67,7 +67,7 @@ export const Hero: React.FC<HeroProps> = ({ onExploreDeals, onBrowseCategories }
           <span className="text-[#303541] hidden sm:inline">·</span>
           <div className="flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-[#7657D5] shrink-0" />
-            <span>Verified Amazon Associates Link</span>
+            <span>Affiliate Links to Amazon</span>
           </div>
           <span className="text-[#303541] hidden sm:inline">·</span>
           <div className="flex items-center gap-1.5">

@@ -121,7 +121,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
               <h2 className="text-[17px] font-display font-semibold text-[#F5F7FA]">
                 {isAdmin ? 'Admin Dashboard' : isFirstTimeSetup ? 'Initialize Admin Access' : 'Private Admin Login'}
               </h2>
-              <p className="text-[12px] text-[#A7AFBF]">Deals On Point Security Gate</p>
+              <p className="text-[12px] text-[#A7AFBF]">Deals on Point Security Gate</p>
             </div>
           </div>
           <button

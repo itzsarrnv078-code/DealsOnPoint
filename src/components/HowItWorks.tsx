@@ -12,7 +12,7 @@ export const HowItWorks: React.FC = () => {
             Transparent Product Discovery
           </div>
           <h2 className="text-[26px] sm:text-[32px] font-display font-semibold text-[#F5F7FA] tracking-tight">
-            How Deals On Point <span className="text-[#7657D5]">Works</span>
+            How Deals on Point <span className="text-[#7657D5]">Works</span>
           </h2>
         </div>
 
@@ -34,7 +34,7 @@ export const HowItWorks: React.FC = () => {
                 1 — WE FIND
               </h3>
               <p className="text-[14px] sm:text-[15px] text-[#A7AFBF] leading-[1.65] font-normal">
-                Interesting products and real deals are curated for Deals On Point.
+                Interesting products and real deals are curated for Deals on Point.
               </p>
             </div>
           </div>

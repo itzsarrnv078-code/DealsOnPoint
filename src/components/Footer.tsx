@@ -1,6 +1,5 @@
 import React from 'react';
 import { NavSection, LegalModalType } from '../types/product';
-import logoPng from '../assets/images/deals_on_point_logo.png';
 
 interface FooterProps {
   onNavigate: (section: NavSection) => void;
@@ -23,18 +22,18 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal, onOpenA
           <div className="md:col-span-5 space-y-4">
             <div className="flex items-center gap-3">
               <img
-                src={logoPng}
-                alt="Deals On Point Logo"
-                className="h-10 sm:h-12 w-auto object-contain drop-shadow-sm"
+                src="/assets/aistudio/Glossy_Deals_On_Point_Shopping_Logo_75f7c2fe.png"
+                alt="Deals on Point Logo"
+                className="h-11 w-11 sm:h-13 sm:w-13 rounded-full object-contain bg-black drop-shadow-sm shrink-0"
               />
-              <span className="text-[20px] sm:text-[22px] font-display font-extrabold tracking-[0.05em] uppercase leading-none">
-                <span className="text-[#F5F7FA]">DEALS </span>
-                <span className="bg-gradient-to-r from-[#3B5BDB] to-[#7657D5] bg-clip-text text-transparent">ON POINT</span>
+              <span className="text-[20px] sm:text-[22px] font-display font-extrabold tracking-[0.04em] leading-none">
+                <span className="text-[#F5F7FA]">Deals </span>
+                <span className="bg-gradient-to-r from-[#3B5BDB] to-[#7657D5] bg-clip-text text-transparent">on Point</span>
               </span>
             </div>
 
             <p className="text-[14px] sm:text-[15px] font-display font-semibold text-[#F5F7FA] tracking-tight">
-              “Smart Finds. Deals On Point.”
+              “Smart Finds. Deals on Point.”
             </p>
 
             <p className="text-[14px] font-sans text-[#A7AFBF] max-w-sm leading-[1.65] font-normal">
@@ -143,12 +142,12 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenLegal, onOpenA
               “As an Amazon Associate I earn from qualifying purchases.”
             </p>
             <p className="text-[12px] text-[#747D8C] max-w-2xl leading-normal">
-              Deals On Point is an independent affiliate product discovery website and is not owned, operated, or endorsed by Amazon.com, Inc. or any of its subsidiaries.
+              Deals on Point is an independent affiliate product discovery website and is not owned, operated, or endorsed by Amazon.com, Inc. or any of its subsidiaries.
             </p>
           </div>
 
           <div className="flex items-center gap-4 text-[12px] text-[#747D8C] shrink-0">
-            <span>© {new Date().getFullYear()} Deals On Point. All rights reserved.</span>
+            <span>© {new Date().getFullYear()} Deals on Point. All rights reserved.</span>
             {onOpenAdminLogin && (
               <button
                 onClick={onOpenAdminLogin}

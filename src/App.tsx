@@ -329,7 +329,7 @@ export default function App() {
     });
   }, [products, searchQuery, selectedCategory]);
 
-  // Distinct groups for Deals On Point
+  // Distinct groups for Deals on Point
   const deals = useMemo(() => {
     return products.filter((p) => p.isNewDeal || p.badge === 'NEW DEAL');
   }, [products]);
@@ -500,7 +500,7 @@ export default function App() {
                     </h3>
                     <p className="text-[14px] sm:text-[15px] text-[#A7AFBF] mb-6 leading-relaxed font-normal">
                       {products.length === 0
-                        ? 'We’re getting Deals On Point ready with products worth discovering. Check back soon.'
+                        ? 'We’re getting Deals on Point ready with products worth discovering. Check back soon.'
                         : 'Try searching with different keywords, or clear your filters to view all categories.'}
                     </p>
                     <button
@@ -561,7 +561,7 @@ export default function App() {
                     ) : (
                       <EmptyState
                         title="Great deals are coming soon."
-                        subtitle="Fresh finds are being added to Deals On Point. Check back soon."
+                        subtitle="Fresh finds are being added to Deals on Point. Check back soon."
                         onAddProduct={isAdmin ? () => setIsManagerOpen(true) : undefined}
                         actionText="Add Product to Deals"
                       />
@@ -614,7 +614,7 @@ export default function App() {
                     ) : (
                       <EmptyState
                         title="Fresh finds are on their way."
-                        subtitle="We’re getting Deals On Point ready with products worth discovering. Check back soon."
+                        subtitle="We’re getting Deals on Point ready with products worth discovering. Check back soon."
                         onAddProduct={isAdmin ? () => setIsManagerOpen(true) : undefined}
                         actionText="Add Product to New Arrivals"
                       />
@@ -641,13 +641,13 @@ export default function App() {
                         <Info className="w-5 h-5" />
                       </div>
                       <div className="text-[11px] sm:text-[12px] font-display font-bold uppercase tracking-[0.08em] text-[#3B5BDB] mb-2 relative z-10">
-                        About Deals On Point
+                        About Deals on Point
                       </div>
                       <h3 className="text-[22px] sm:text-[26px] font-display font-semibold text-[#F5F7FA] tracking-tight mb-4 leading-snug relative z-10">
                         Product Discovery <span className="text-[#7657D5]">Made Simple</span>
                       </h3>
                       <p className="text-[15px] sm:text-[16px] text-[#A7AFBF] leading-[1.75] max-w-2xl mx-auto font-normal relative z-10">
-                        “Deals On Point makes product discovery simple. We bring together useful products, interesting finds and deals across tech, beauty, home, lifestyle and more — helping you discover products worth checking out without the clutter.”
+                        “Deals on Point makes product discovery simple. We bring together useful products, interesting finds and deals across tech, beauty, home, lifestyle and more — helping you discover products worth checking out without the clutter.”
                       </p>
                     </div>
                   </div>

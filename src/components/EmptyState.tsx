@@ -1,6 +1,5 @@
 import React from 'react';
 import { PlusCircle } from 'lucide-react';
-import logoPng from '../assets/images/deals_on_point_logo.png';
 
 interface EmptyStateProps {
   title?: string;
@@ -11,7 +10,7 @@ interface EmptyStateProps {
 
 export const EmptyState: React.FC<EmptyStateProps> = ({
   title = 'Great deals are coming soon.',
-  subtitle = 'Fresh finds are being added to Deals On Point. Check back soon for curated selections.',
+  subtitle = 'Fresh finds are being added to Deals on Point. Check back soon for curated selections.',
   onAddProduct,
   actionText = 'Add First Product',
 }) => {
@@ -21,11 +20,11 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-gradient-to-r from-[#3B5BDB]/15 via-[#5C59D8]/10 to-[#7657D5]/15 blur-3xl pointer-events-none rounded-full" />
 
       {/* Brand logo container */}
-      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-[#11131A] border border-[#303541] flex items-center justify-center mx-auto mb-5 shadow-md p-2.5 relative z-10">
+      <div className="w-18 h-18 sm:w-22 sm:h-22 rounded-full bg-black border border-[#303541] flex items-center justify-center mx-auto mb-5 shadow-md p-1 relative z-10 overflow-hidden">
         <img
-          src={logoPng}
-          alt="Deals On Point"
-          className="w-full h-full object-contain"
+          src="/assets/aistudio/Glossy_Deals_On_Point_Shopping_Logo_75f7c2fe.png"
+          alt="Deals on Point"
+          className="w-full h-full rounded-full object-contain bg-black"
         />
       </div>
 

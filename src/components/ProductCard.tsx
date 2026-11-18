@@ -120,7 +120,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         {/* Action Button: “View Deal” in Deep Blue & Admin Edit Button */}
         <div className="pt-3.5 border-t border-[#303541]/70 flex items-center justify-between mt-auto">
           <div className="flex items-center gap-2">
-            <span className="text-[12px] font-sans text-[#747D8C] font-medium">Deals On Point</span>
+            <span className="text-[12px] font-sans text-[#747D8C] font-medium">Deals on Point</span>
             {isAdmin && onEditProduct && (
               <button
                 type="button"

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { X, ShieldCheck, Mail, Send, CheckCircle2, FileText, Lock, Info } from 'lucide-react';
 import { LegalModalType } from '../types/product';
-import logoPng from '../assets/images/deals_on_point_logo.png';
 
 interface TrustModalsProps {
   type: LegalModalType;
@@ -38,7 +37,7 @@ export const TrustModals: React.FC<TrustModalsProps> = ({ type, onClose }) => {
             {type === 'terms' && <FileText className="w-5 h-5 text-[#A7AFBF]" />}
 
             <h2 className="text-[18px] sm:text-[20px] font-display font-semibold text-[#F5F7FA] tracking-tight capitalize">
-              {type === 'about' && 'About Deals On Point'}
+              {type === 'about' && 'About Deals on Point'}
               {type === 'contact' && 'Contact Us'}
               {type === 'disclosure' && 'Affiliate Disclosure'}
               {type === 'privacy' && 'Privacy Policy'}
@@ -61,29 +60,29 @@ export const TrustModals: React.FC<TrustModalsProps> = ({ type, onClose }) => {
             <div className="space-y-4">
               <div className="flex items-center gap-3.5 p-4 rounded-xl bg-[#090A0F] border border-[#303541] text-[#F5F7FA]">
                 <img
-                  src={logoPng}
-                  alt="Deals On Point Logo"
-                  className="h-12 w-auto object-contain"
+                  src="/assets/aistudio/Glossy_Deals_On_Point_Shopping_Logo_75f7c2fe.png"
+                  alt="Deals on Point Logo"
+                  className="h-14 w-14 rounded-full object-contain bg-black shrink-0"
                 />
                 <div>
-                  <h3 className="font-display font-extrabold text-[17px] tracking-wide uppercase leading-none">
-                    <span className="text-[#F5F7FA]">DEALS </span>
-                    <span className="bg-gradient-to-r from-[#3B5BDB] to-[#7657D5] bg-clip-text text-transparent">ON POINT</span>
+                  <h3 className="font-display font-extrabold text-[17px] tracking-wide leading-none">
+                    <span className="text-[#F5F7FA]">Deals </span>
+                    <span className="bg-gradient-to-r from-[#3B5BDB] to-[#7657D5] bg-clip-text text-transparent">on Point</span>
                   </h3>
                   <p className="text-[12px] font-display font-semibold text-[#3B5BDB] mt-1">
-                    Smart Finds. Deals On Point.
+                    Smart Finds. Deals on Point.
                   </p>
                 </div>
               </div>
 
               <p className="text-[15px] sm:text-[16px] text-[#F5F7FA] font-medium leading-relaxed bg-[#181B24] p-4.5 rounded-xl border border-[#303541]">
-                “Deals On Point makes product discovery simple. We bring together interesting finds, useful everyday products and deals across tech, beauty, home, lifestyle and more — helping you discover products worth checking out without the clutter.”
+                “Deals on Point makes product discovery simple. We bring together interesting finds, useful everyday products and deals across tech, beauty, home, lifestyle and more — helping you discover products worth checking out without the clutter.”
               </p>
               <p>
-                Deals On Point is an independent product discovery website created for shoppers who value quality, honest curation, and modern design. The purpose of Deals On Point is simple: we discover and organize interesting products and deals so visitors can easily browse products, learn more about them, and then choose whether they want to view the product on Amazon.
+                Deals on Point is an independent product discovery website created for shoppers who value quality, honest curation, and modern design. The purpose of Deals on Point is simple: we discover and organize interesting products and deals so visitors can easily browse products, learn more about them, and then choose whether they want to view the product on Amazon.
               </p>
               <p>
-                Deals On Point is not an online store, and customers do not purchase directly on Deals On Point. Every product is individually curated to ensure high utility and honest presentation.
+                Deals on Point is not an online store, and customers do not purchase directly on Deals on Point. Every product is individually curated to ensure high utility and honest presentation.
               </p>
               <div className="bg-[#181B24] p-4.5 rounded-xl border border-[#303541] mt-4">
                 <h4 className="font-display font-semibold text-[#F5F7FA] text-[15px] mb-1">Our Independence Promise</h4>
@@ -103,13 +102,13 @@ export const TrustModals: React.FC<TrustModalsProps> = ({ type, onClose }) => {
                   </div>
                   <h3 className="text-[18px] font-display font-semibold text-[#F5F7FA]">Message Received!</h3>
                   <p className="text-[13px] text-[#A7AFBF] max-w-sm mx-auto">
-                    Thank you for reaching out to Deals On Point. We will respond to your inquiry shortly.
+                    Thank you for reaching out to Deals on Point. We will respond to your inquiry shortly.
                   </p>
                 </div>
               ) : (
                 <form onSubmit={handleContactSubmit} className="space-y-4">
                   <p className="text-[13px] text-[#A7AFBF]">
-                    Have a question, feedback, or product recommendation for Deals On Point? Send us a note below.
+                    Have a question, feedback, or product recommendation for Deals on Point? Send us a note below.
                   </p>
                   <div>
                     <label className="block text-[12px] font-display font-semibold uppercase tracking-[0.06em] text-[#F5F7FA] mb-1">Name</label>
@@ -169,7 +168,7 @@ export const TrustModals: React.FC<TrustModalsProps> = ({ type, onClose }) => {
 
               <h3 className="font-display font-semibold text-[#F5F7FA] text-[15px]">Affiliate Transparency</h3>
               <p>
-                Deals On Point is an independent affiliate website. When you click on links to products on Deals On Point and make a purchase on Amazon, we may earn an affiliate commission.
+                Deals on Point is an independent affiliate website. When you click on links to products on Deals on Point and make a purchase on Amazon, we may earn an affiliate commission.
               </p>
               <p className="font-medium text-[#F5F7FA]">
                 “We may earn a commission from qualifying purchases made through links on this page, at no additional cost to you.”
@@ -177,10 +176,10 @@ export const TrustModals: React.FC<TrustModalsProps> = ({ type, onClose }) => {
               
               <h3 className="font-display font-semibold text-[#F5F7FA] text-[15px]">Independent Discovery Platform</h3>
               <p>
-                Deals On Point is NOT an online store. Customers do not purchase directly from this website. Clicking “View Deal on Amazon” will take you to Amazon using our Amazon Associates link.
+                Deals on Point is NOT an online store. Customers do not purchase directly from this website. Clicking “View Deal” will take you to Amazon using our Amazon Associates link.
               </p>
               <p>
-                Amazon and the Amazon logo are trademarks of Amazon.com, Inc. or its affiliates. Deals On Point is not endorsed by, sponsored by, or an official representative of Amazon.
+                Amazon and the Amazon logo are trademarks of Amazon.com, Inc. or its affiliates. Deals on Point is not endorsed by, sponsored by, or an official representative of Amazon.
               </p>
             </div>
           )}
@@ -188,15 +187,15 @@ export const TrustModals: React.FC<TrustModalsProps> = ({ type, onClose }) => {
           {type === 'privacy' && (
             <div className="space-y-4">
               <p>
-                At Deals On Point, your privacy is important to us.
+                At Deals on Point, your privacy is important to us.
               </p>
               <h3 className="font-display font-semibold text-[#F5F7FA] text-[15px]">No Required Account or Financial Collection</h3>
               <p>
-                You do not need to register an account or provide payment information on Deals On Point. All financial transactions take place exclusively on Amazon's secure platform.
+                You do not need to register an account or provide payment information on Deals on Point. All financial transactions take place exclusively on Amazon's secure platform.
               </p>
               <h3 className="font-display font-semibold text-[#F5F7FA] text-[15px]">Third-Party Referral Cookies</h3>
               <p>
-                When you click an outbound link such as “View Deal on Amazon”, Amazon may set referral tracking cookies in accordance with their privacy policy to identify qualifying purchases made via our associate link.
+                When you click an outbound link such as “View Deal”, Amazon may set referral tracking cookies in accordance with their privacy policy to identify qualifying purchases made via our associate link.
               </p>
             </div>
           )}
@@ -205,11 +204,11 @@ export const TrustModals: React.FC<TrustModalsProps> = ({ type, onClose }) => {
             <div className="space-y-4">
               <h3 className="font-display font-semibold text-[#F5F7FA] text-[15px]">Terms of Use</h3>
               <p>
-                By using Deals On Point, you agree to these Terms and Conditions. Deals On Point provides independent product discovery, product overviews, and referral links to third-party retail destinations like Amazon.
+                By using Deals on Point, you agree to these Terms and Conditions. Deals on Point provides independent product discovery, product overviews, and referral links to third-party retail destinations like Amazon.
               </p>
               <h3 className="font-display font-semibold text-[#F5F7FA] text-[15px]">Pricing & Availability Disclaimer</h3>
               <p>
-                Product prices, availability, and delivery conditions are managed directly by Amazon and its merchants and may change at any time. Deals On Point does not maintain or guarantee live merchant pricing. Please verify details on Amazon before completing any purchase.
+                Product prices, availability, and delivery conditions are managed directly by Amazon and its merchants and may change at any time. Deals on Point does not maintain or guarantee live merchant pricing. Please verify details on Amazon before completing any purchase.
               </p>
               <p className="italic font-medium text-[#3B5BDB]">
                 “As an Amazon Associate I earn from qualifying purchases.”
@@ -221,7 +220,7 @@ export const TrustModals: React.FC<TrustModalsProps> = ({ type, onClose }) => {
 
         {/* Footer */}
         <div className="px-6 py-3.5 bg-[#090A0F] border-t border-[#303541] flex items-center justify-between text-[13px] text-[#747D8C] font-sans">
-          <span>Deals On Point · Independent Discovery</span>
+          <span>Deals on Point · Independent Discovery</span>
           <button
             onClick={onClose}
             className="px-4 py-1.5 bg-[#1E222D] hover:bg-[#303541] text-[#F5F7FA] font-semibold rounded-lg transition-colors cursor-pointer"

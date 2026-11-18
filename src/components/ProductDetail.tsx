@@ -60,7 +60,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   };
 
   const handleSocialShare = (platform: 'pinterest' | 'facebook' | 'twitter' | 'telegram') => {
-    const text = encodeURIComponent(`${product.name} - Deals On Point`);
+    const text = encodeURIComponent(`${product.name} - Deals on Point`);
     const encodedUrl = encodeURIComponent(currentUrl);
     const media = encodeURIComponent(images[0] || '');
 
@@ -104,7 +104,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
             className="inline-flex items-center gap-1.5 text-[14px] sm:text-[15px] font-semibold text-[#A7AFBF] hover:text-[#F5F7FA] transition-colors focus:outline-none cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4 text-[#3B5BDB]" />
-            <span>Back to Deals On Point</span>
+            <span>Back to Deals on Point</span>
           </button>
 
           {/* Clean Unboxed Breadcrumb & Admin Actions */}
@@ -322,11 +322,14 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                 rel="noopener noreferrer"
                 className="w-full py-3.5 px-5 bg-[#3B5BDB] hover:bg-[#7657D5] text-white font-sans font-bold text-[15px] sm:text-[16px] tracking-wide rounded-xl shadow-lg shadow-[#3B5BDB]/25 transition-all duration-200 flex items-center justify-center gap-2 group text-center active:scale-[0.99] cursor-pointer"
               >
-                <span>GET THIS DEAL ON AMAZON →</span>
+                <span>View Deal</span>
                 <ExternalLink className="w-4 h-4 transition-transform group-hover:translate-x-1" />
               </a>
-              <p className="text-[11.5px] text-[#747D8C] text-center mt-2 font-sans">
-                Opens directly on Amazon in a new tab
+              <p className="text-[11.5px] text-[#A7AFBF] text-center mt-2 font-sans font-medium">
+                Opens on Amazon in a new tab
+              </p>
+              <p className="text-[11px] text-[#747D8C] text-center mt-0.5 font-sans">
+                Affiliate link: We may earn a commission from qualifying purchases.
               </p>
             </div>
 
@@ -378,7 +381,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
               </div>
             )}
 
-            {/* Primary Action Box: “View Deal on Amazon →” */}
+            {/* Primary Action Box: “View Deal” */}
             <div className="pt-2 font-sans">
               <div className="p-5 sm:p-6 bg-[#181B24] rounded-2xl border border-[#303541] shadow-xl space-y-4">
                 
@@ -410,13 +413,16 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                   rel="noopener noreferrer"
                   className="w-full py-4 px-6 bg-[#3B5BDB] hover:bg-[#7657D5] text-white font-sans font-semibold text-[16px] sm:text-[17px] tracking-wide rounded-xl shadow-lg shadow-[#3B5BDB]/25 hover:shadow-[#7657D5]/30 transition-all duration-200 flex items-center justify-center gap-2 group text-center active:scale-[0.99] cursor-pointer"
                 >
-                  <span>View Deal on Amazon →</span>
+                  <span>View Deal</span>
                   <ExternalLink className="w-5 h-5 transition-transform group-hover:translate-x-1" />
                 </a>
 
-                <div className="text-center font-sans">
+                <div className="text-center font-sans space-y-1">
                   <p className="text-[13px] text-[#A7AFBF] font-medium leading-normal">
-                    Click to check current pricing, options, and availability directly on Amazon.
+                    Opens directly on Amazon in a new tab to check current pricing, options, and availability.
+                  </p>
+                  <p className="text-[11.5px] text-[#747D8C]">
+                    Affiliate link: We may earn a commission from qualifying purchases.
                   </p>
                 </div>
 

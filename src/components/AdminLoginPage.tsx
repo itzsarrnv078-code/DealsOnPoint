@@ -115,13 +115,13 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-r from-[#3B5BDB]/15 via-[#5C59D8]/10 to-[#7657D5]/15 blur-3xl pointer-events-none rounded-full" />
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4">
-        {/* Back to Deals On Point */}
+        {/* Back to Deals on Point */}
         <button
           onClick={onNavigateHome}
           className="inline-flex items-center gap-2 text-[14px] text-[#A7AFBF] hover:text-white transition-colors mb-6 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4 text-[#3B5BDB]" />
-          <span>Back to Deals On Point</span>
+          <span>Back to Deals on Point</span>
         </button>
 
         <div className="flex justify-center mb-4">
@@ -134,7 +134,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
           Admin Portal
         </h1>
         <p className="mt-1.5 text-center text-[14px] text-[#A7AFBF]">
-          {requireChangePassword ? 'Secure Password Update' : 'Deals On Point Management Access'}
+          {requireChangePassword ? 'Secure Password Update' : 'Deals on Point Management Access'}
         </p>
       </div>
 
